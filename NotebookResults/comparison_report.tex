@@ -1,0 +1,892 @@
+\documentclass[12pt,a4paper]{article}
+
+% ── Page & fonts ─────────────────────────────────────────────────────────────
+\usepackage[a4paper, top=2.5cm, bottom=2.5cm, left=2.8cm, right=2.8cm]{geometry}
+\usepackage[T1]{fontenc}
+\usepackage{lmodern}
+\usepackage{microtype}
+
+% ── Graphics & colour ────────────────────────────────────────────────────────
+\usepackage{graphicx}
+\usepackage{xcolor}
+\usepackage{colortbl}
+
+% ── Tables ───────────────────────────────────────────────────────────────────
+\usepackage{booktabs}
+\usepackage{multirow}
+\usepackage{makecell}
+\usepackage{array}
+\usepackage{tabularx}
+
+% ── Figures ──────────────────────────────────────────────────────────────────
+\usepackage{subcaption}
+\usepackage{float}
+\usepackage{caption}
+\captionsetup{font=small, labelfont=bf, skip=6pt}
+\captionsetup[subfigure]{font=small, labelfont=bf}
+
+% ── Boxes ────────────────────────────────────────────────────────────────────
+\usepackage[most]{tcolorbox}
+\usepackage{mdframed}
+
+% ── Typography & layout ──────────────────────────────────────────────────────
+\usepackage{titlesec}
+\usepackage{parskip}
+\usepackage{enumitem}
+\usepackage{amsmath}
+\usepackage{hyperref}
+\usepackage{listings}
+\usepackage{fancyhdr}
+
+% ── Colour palette ───────────────────────────────────────────────────────────
+\definecolor{primary}  {RGB}{31,  73, 125}   % dark blue
+\definecolor{secondary}{RGB}{68, 114, 196}   % mid blue
+\definecolor{accent}   {RGB}{237,125,  49}   % orange
+\definecolor{lightbg}  {RGB}{242,242,242}    % light grey
+\definecolor{wingreen} {RGB}{169,208,142}    % green
+\definecolor{losered}  {RGB}{255,180,180}    % red
+\definecolor{tieyellow}{RGB}{255,235,156}    % yellow
+\definecolor{darktext} {RGB}{43, 43, 43}
+
+% ── Table helpers ────────────────────────────────────────────────────────────
+\newcommand{\win}[1]  {\cellcolor{wingreen}\textbf{#1}}
+\newcommand{\lose}[1] {\cellcolor{losered}#1}
+\newcommand{\tiew}[1] {\cellcolor{tieyellow}#1}
+\newcommand{\hdr}[1]  {\cellcolor{secondary}\color{white}\textbf{#1}}
+\newcommand{\hdrp}[1] {\cellcolor{primary}\color{white}\textbf{#1}}
+\newcolumntype{C}[1]{>{\centering\arraybackslash}p{#1}}
+\newcolumntype{L}[1]{>{\raggedright\arraybackslash}p{#1}}
+\renewcommand{\arraystretch}{1.35}
+
+% ── Section styling ──────────────────────────────────────────────────────────
+\titleformat{\section}
+  {\large\bfseries\color{primary}}
+  {\thesection}{1em}{}
+  [\color{secondary}\titlerule]
+
+\titleformat{\subsection}
+  {\normalsize\bfseries\color{secondary}}
+  {\thesubsection}{1em}{}
+
+% ── tcolorbox styles ─────────────────────────────────────────────────────────
+\tcbset{
+  summarybox/.style={
+    colback=primary!8, colframe=primary, arc=4pt,
+    boxrule=1pt, left=8pt, right=8pt, top=6pt, bottom=6pt,
+    fonttitle=\bfseries\color{white}, coltitle=white,
+    attach boxed title to top left={yshift=-2mm, xshift=6mm},
+    boxed title style={colback=primary, arc=3pt}
+  },
+  findingbox/.style={
+    colback=accent!10, colframe=accent, arc=4pt,
+    boxrule=1pt, left=8pt, right=8pt, top=6pt, bottom=6pt,
+    fonttitle=\bfseries\color{white}, coltitle=white,
+    attach boxed title to top left={yshift=-2mm, xshift=6mm},
+    boxed title style={colback=accent, arc=3pt}
+  },
+  codebox/.style={
+    colback=lightbg, colframe=darktext!40, arc=3pt,
+    boxrule=0.6pt, left=6pt, right=6pt, top=4pt, bottom=4pt,
+    fontupper=\ttfamily\small
+  },
+  efftbox/.style={
+    colback=wingreen!30, colframe=wingreen!80!black, arc=4pt,
+    boxrule=1pt, left=6pt, right=6pt, top=4pt, bottom=4pt,
+    fonttitle=\bfseries, title=EfficientNet-B0
+  },
+  resbox/.style={
+    colback=secondary!15, colframe=secondary, arc=4pt,
+    boxrule=1pt, left=6pt, right=6pt, top=4pt, bottom=4pt,
+    fonttitle=\bfseries, title=ResNet50V2
+  }
+}
+
+% ── Code listing style ───────────────────────────────────────────────────────
+\lstset{
+  language=Python,
+  basicstyle=\ttfamily\footnotesize,
+  keywordstyle=\color{secondary}\bfseries,
+  stringstyle=\color{accent},
+  commentstyle=\color{darktext!60}\itshape,
+  backgroundcolor=\color{lightbg},
+  frame=single, framerule=0.5pt, frameround=tttt,
+  rulecolor=\color{darktext!30},
+  breaklines=true, showstringspaces=false,
+  numbers=none, xleftmargin=8pt, xrightmargin=8pt,
+  aboveskip=4pt, belowskip=4pt
+}
+
+% ── Header / footer ──────────────────────────────────────────────────────────
+\pagestyle{fancy}
+\fancyhf{}
+\fancyhead[L]{\small\color{darktext!60}Driver Drowsiness Detection — Model Comparison}
+\fancyhead[R]{\small\color{darktext!60}Bachelor Thesis, April 2026}
+\fancyfoot[C]{\small\thepage}
+\renewcommand{\headrulewidth}{0.4pt}
+
+% ─────────────────────────────────────────────────────────────────────────────
+\begin{document}
+% ─────────────────────────────────────────────────────────────────────────────
+
+% ── Title page ───────────────────────────────────────────────────────────────
+\begin{titlepage}
+  \centering
+  \vspace*{2cm}
+  {\color{primary}\rule{\linewidth}{2pt}}\\[1em]
+  {\Huge\bfseries\color{primary} Driver Drowsiness Detection}\\[0.6em]
+  {\LARGE\color{secondary} EfficientNet-B0 vs.\ ResNet50V2}\\[0.4em]
+  {\large Transfer Learning — Full Results Comparison}\\[0.5em]
+  {\color{primary}\rule{\linewidth}{2pt}}\\[2em]
+
+  \begin{tcolorbox}[summarybox, title=Quick Verdict, width=0.82\linewidth]
+    \textbf{ResNet50V2 wins} on every meaningful accuracy metric:
+    fewer errors (15 vs.\ 23), higher macro F1 (0.98 vs.\ 0.97),
+    lower val loss (0.026 vs.\ 0.036), faster convergence (41 vs.\ 53 epochs),
+    and cleaner feature embeddings.
+    EfficientNet's only advantage is its $6\times$ smaller parameter count,
+    relevant for edge/embedded deployment.
+  \end{tcolorbox}
+
+  \vspace{2em}
+  {\large Bachelor Thesis\\[0.3em] April 2026}
+  \vfill
+\end{titlepage}
+
+\tableofcontents
+\newpage
+
+% ═══════════════════════════════════════════════════════════════════════════════
+\section{Dataset \& Experimental Setup}
+% ═══════════════════════════════════════════════════════════════════════════════
+
+Both models are trained and evaluated on the \textbf{same} 6-class drowsiness dataset
+using an identical 70/30 random split (seed = 42).
+
+\subsection{Classes}
+
+\begin{center}
+\begin{tabular}{clC{2.5cm}C{2.5cm}C{2.5cm}}
+\toprule
+\hdr{Label} & \hdr{Meaning} & \hdr{Train} & \hdr{Test} & \hdr{Total} \\
+\midrule
+0 & yawn        & $\sim$175  & 84  & $\sim$259 \\
+1 & no\_yawn    & $\sim$160  & 76  & $\sim$236 \\
+2 & Closed      & $\sim$500  & 223 & $\sim$723 \\
+3 & Open        & $\sim$500  & 228 & $\sim$728 \\
+4 & front       & $\sim$1430 & 594 & $\sim$2024 \\
+5 & down        & $\sim$1540 & 642 & $\sim$2182 \\
+\midrule
+  & \textbf{Total} & \textbf{4{,}313} & \textbf{1{,}847} & \textbf{6{,}160} \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\begin{tcolorbox}[findingbox, title=Dataset Imbalance Note]
+\textit{front} and \textit{down} have roughly $8\times$ more samples than
+\textit{yawn} and \textit{no\_yawn}.
+This directly explains why both models struggle most on \textit{yawn} — it has the
+smallest support (84 test samples) and is the hardest class visually.
+\end{tcolorbox}
+
+\begin{figure}[H]
+  \centering
+  \begin{subfigure}[t]{0.48\textwidth}
+    \includegraphics[width=\linewidth]{images/efficientnet_class_dist.png}
+    \caption{EfficientNet-B0}
+  \end{subfigure}
+  \hfill
+  \begin{subfigure}[t]{0.48\textwidth}
+    \includegraphics[width=\linewidth]{images/resnet_class_dist.png}
+    \caption{ResNet50V2}
+  \end{subfigure}
+  \caption{Class distribution — Train vs.\ Test split (identical for both models)}
+\end{figure}
+
+% ═══════════════════════════════════════════════════════════════════════════════
+\section{Code Architecture \& Logic Differences}
+% ═══════════════════════════════════════════════════════════════════════════════
+
+The two notebooks share the same data-loading pipeline and two-phase training
+strategy, but differ in base model, preprocessing, and head architecture.
+
+% ──────────────────────────────────────────────────────────────────────────────
+\subsection{Data Loading Pipeline (Shared)}
+
+Both notebooks load data through three separate functions and merge them:
+
+\begin{lstlisting}
+# Step 1 — yawn / no_yawn: Haar-cascade face crop before resizing
+def face_for_yawn(direc, face_cas_path):
+    face_cascade = cv2.CascadeClassifier(face_cas_path)
+    faces = face_cascade.detectMultiScale(image_array, 1.3, 5)
+    roi_color = img[y:y+h, x:x+w]          # crop to face ROI
+    resized = cv2.resize(roi_color, (224, 224))
+
+# Step 2 — Closed / Open eyes: direct resize, no face crop
+def get_data(dir_path):
+    resized = cv2.resize(img_array, (224, 224))
+
+# Step 3 — head pose front / down: direct resize with validity checks
+def get_head_pose_data(dir_path):
+    if img_array is None: continue
+    if resized.shape != (224, 224, 3): continue
+\end{lstlisting}
+
+\begin{tcolorbox}[findingbox, title=Important Design Decision]
+\textit{yawn} and \textit{no\_yawn} go through a Haar-cascade face detector before
+resizing, while \textit{Closed}/\textit{Open} eyes and head-pose images are resized
+directly. This means yawn/no\_yawn images are face-cropped patches, whereas other
+classes are full-frame crops — a potential source of domain mismatch.
+\end{tcolorbox}
+
+% ──────────────────────────────────────────────────────────────────────────────
+\subsection{Preprocessing}
+
+This is the most critical code difference between the two notebooks:
+
+\begin{tcolorbox}[efftbox]
+\begin{lstlisting}
+# EfficientNet-B0 — NO explicit preprocessing needed.
+# The model contains an internal rescaling layer.
+train_gen = ImageDataGenerator(
+    zoom_range=0.2, horizontal_flip=True, rotation_range=30
+    # no rescale, no preprocessing_function
+)
+# At inference time: pass raw uint8 images (0-255)
+y_prob = model.predict(X_test.astype('float32'))
+\end{lstlisting}
+\end{tcolorbox}
+
+\begin{tcolorbox}[resbox]
+\begin{lstlisting}
+from tensorflow.keras.applications.resnet_v2 import preprocess_input
+# ResNet50V2 — MUST apply preprocess_input explicitly.
+# Scales pixels from [0,255] to [-1,1].
+train_gen = ImageDataGenerator(
+    preprocessing_function=preprocess_input,   # <-- required
+    zoom_range=0.2, horizontal_flip=True, rotation_range=30
+)
+# At inference time: always preprocess first
+X_test_proc = preprocess_input(X_test.astype('float32'))
+y_prob = model.predict(X_test_proc)
+\end{lstlisting}
+\end{tcolorbox}
+
+\begin{tcolorbox}[findingbox, title=Why This Matters]
+Forgetting \texttt{preprocess\_input} with ResNet50V2 would feed pixel values in
+[0, 255] to a network that expects [-1, 1], causing dramatically wrong predictions.
+EfficientNet avoids this pitfall with its built-in rescaling layer.
+The same preprocessing must also be applied to Grad-CAM inputs and the
+t-SNE feature extractor — three places where the two notebooks diverge.
+\end{tcolorbox}
+
+% ──────────────────────────────────────────────────────────────────────────────
+\subsection{Model Head Architecture}
+
+\begin{tcolorbox}[efftbox]
+\begin{lstlisting}
+base_model = EfficientNetB0(weights='imagenet', include_top=False,
+                            input_shape=(224,224,3))
+base_model.trainable = False
+
+x = GlobalAveragePooling2D()(base_model.output)   # 1280-dim
+x = Dense(256, activation='relu')(x)
+x = Dropout(0.5)(x)
+output = Dense(6, activation='softmax')(x)         # 3 layers total
+\end{lstlisting}
+\end{tcolorbox}
+
+\begin{tcolorbox}[resbox]
+\begin{lstlisting}
+base_model = ResNet50V2(weights='imagenet', include_top=False,
+                        input_shape=(224,224,3))
+base_model.trainable = False
+
+x = GlobalAveragePooling2D()(base_model.output)   # 2048-dim
+x = BatchNormalization()(x)     # extra BN — matches ResNet's design
+x = Dense(256, activation='relu')(x)
+x = Dropout(0.5)(x)
+x = Dense(128, activation='relu')(x)              # extra hidden layer
+x = Dropout(0.3)(x)
+output = Dense(6, activation='softmax')(x)         # 5 layers total
+\end{lstlisting}
+\end{tcolorbox}
+
+\begin{table}[H]
+\centering
+\caption{Head architecture comparison}
+\begin{tabular}{L{4.5cm}C{4cm}C{4cm}}
+\toprule
+\hdr{Property} & \hdr{EfficientNet-B0} & \hdr{ResNet50V2} \\
+\midrule
+GAP output dim      & 1{,}280          & 2{,}048 \\
+BatchNorm after GAP & No               & \textbf{Yes} \\
+Hidden layers       & 1 $\times$ Dense(256) & 2 $\times$ Dense(256, 128) \\
+Dropout             & 0.5              & 0.5 + 0.3 \\
+Total head params   & $\sim$330K       & $\sim$590K \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+% ──────────────────────────────────────────────────────────────────────────────
+\subsection{Two-Phase Training Strategy (Shared Logic)}
+
+\begin{lstlisting}
+# ── Phase 1: freeze base, train head only ──────────────────────────────────
+base_model.trainable = False
+model.compile(optimizer=Adam(lr=1e-3), loss='categorical_crossentropy')
+history1 = model.fit(..., epochs=20,
+    callbacks=[EarlyStopping(patience=5), ReduceLROnPlateau(patience=3)])
+
+# ── Phase 2: unfreeze last 30 layers, fine-tune ────────────────────────────
+base_model.trainable = True
+for layer in base_model.layers[:-30]:
+    layer.trainable = False
+model.compile(optimizer=Adam(lr=1e-5), ...)   # 100x lower LR
+history2 = model.fit(..., epochs=40,
+    callbacks=[EarlyStopping(patience=7), ReduceLROnPlateau(patience=3)])
+\end{lstlisting}
+
+% ═══════════════════════════════════════════════════════════════════════════════
+\section{Training Results}
+% ═══════════════════════════════════════════════════════════════════════════════
+
+\subsection{Training Curves}
+
+\begin{figure}[H]
+  \centering
+  \begin{subfigure}[t]{0.48\textwidth}
+    \includegraphics[width=\linewidth]{images/efficientnet_accuracy.png}
+    \caption{EfficientNet-B0 — Accuracy}
+  \end{subfigure}
+  \hfill
+  \begin{subfigure}[t]{0.48\textwidth}
+    \includegraphics[width=\linewidth]{images/resnet_accuracy.png}
+    \caption{ResNet50V2 — Accuracy}
+  \end{subfigure}
+
+  \vspace{0.6em}
+
+  \begin{subfigure}[t]{0.48\textwidth}
+    \includegraphics[width=\linewidth]{images/efficientnet_loss.png}
+    \caption{EfficientNet-B0 — Loss}
+  \end{subfigure}
+  \hfill
+  \begin{subfigure}[t]{0.48\textwidth}
+    \includegraphics[width=\linewidth]{images/resnet_loss.png}
+    \caption{ResNet50V2 — Loss}
+  \end{subfigure}
+  \caption{Training and validation accuracy/loss over all epochs.
+           Dashed vertical line marks the Phase 1 $\to$ Phase 2 boundary.
+           The large spike in training loss at the boundary is expected
+           when unfreezing layers.}
+\end{figure}
+
+\subsection{Phase-by-Phase Training Summary}
+
+\begin{table}[H]
+\centering
+\caption{Phase 1 — Frozen base, head training only}
+\begin{tabular}{L{5cm}C{3.8cm}C{3.8cm}}
+\toprule
+\hdr{Metric} & \hdr{EfficientNet-B0} & \hdr{ResNet50V2} \\
+\midrule
+Starting LR                   & $10^{-3}$             & $10^{-3}$ \\
+Ep 1 train / val acc          & 84.0\% / 96.7\%       & 79.7\% / 95.2\% \\
+Best val accuracy             & 98.38\% (ep 13)       & \win{98.48\% (ep 15)} \\
+Best val loss                 & \lose{0.0428 (ep 8)}  & \win{0.0482 (ep 14)} \\
+Epochs run / max              & \lose{13 / 20}        & 19 / 20 \\
+Early stopped                 & Yes (patience 5)      & Yes (patience 5) \\
+Final LR                      & $1.25 \times 10^{-4}$ & $1.25 \times 10^{-4}$ \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{table}[H]
+\centering
+\caption{Phase 2 — Partial fine-tuning (last 30 layers unfrozen)}
+\begin{tabular}{L{5cm}C{3.8cm}C{3.8cm}}
+\toprule
+\hdr{Metric} & \hdr{EfficientNet-B0} & \hdr{ResNet50V2} \\
+\midrule
+Starting LR                    & $10^{-5}$              & $10^{-5}$ \\
+Ep 1 train / val acc           & 86.1\% / 98.4\%        & 96.7\% / 98.4\% \\
+Best val accuracy              & 98.81\%                & \win{99.19\%} \\
+Best val loss                  & \lose{0.0360 (ep 40)}  & \win{0.0258 (ep 15)} \\
+Epochs run / max               & \lose{40 / 40 (all)}   & \win{22 / 40} \\
+Early stopped                  & \lose{No — never converged} & \win{Yes (patience 7)} \\
+Final LR                       & $6.25 \times 10^{-7}$  & $1.25 \times 10^{-6}$ \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{table}[H]
+\centering
+\caption{Overall training comparison}
+\begin{tabular}{L{5cm}C{3.8cm}C{3.8cm}C{2cm}}
+\toprule
+\hdr{Metric} & \hdr{EfficientNet-B0} & \hdr{ResNet50V2} & \hdr{Winner} \\
+\midrule
+Total epochs           & \lose{53}         & \win{41}          & ResNet \\
+Best val accuracy      & \lose{98.81\%}    & \win{99.19\%}     & ResNet \\
+Best val loss          & \lose{0.0360}     & \win{0.0258}      & ResNet \\
+Convergence behaviour  & Slow, noisy       & \win{Fast, smooth}& ResNet \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{tcolorbox}[findingbox, title=Key Training Observation]
+EfficientNet's Phase 2 ran all 40 epochs without triggering early stopping,
+meaning it never truly plateaued — val loss kept slowly decreasing (0.0482 $\to$ 0.0360)
+with no sign of overfitting. ResNet converged cleanly after just 22 epochs, achieving a
+significantly lower val loss of 0.0258. This suggests EfficientNet could benefit from
+even more Phase 2 epochs, while ResNet found a better minimum.
+\end{tcolorbox}
+
+% ═══════════════════════════════════════════════════════════════════════════════
+\section{Overall Test Performance}
+% ═══════════════════════════════════════════════════════════════════════════════
+
+\begin{table}[H]
+\centering
+\caption{Overall metrics on the 1{,}847-sample test set}
+\begin{tabular}{L{5cm}C{3.8cm}C{3.8cm}C{2cm}}
+\toprule
+\hdr{Metric} & \hdr{EfficientNet-B0} & \hdr{ResNet50V2} & \hdr{Winner} \\
+\midrule
+Overall accuracy       & \tiew{99\%}        & \tiew{99\%}       & Tie \\
+Macro avg precision    & \lose{0.97}        & \win{0.98}        & ResNet \\
+Macro avg recall       & \lose{0.97}        & \win{0.98}        & ResNet \\
+Macro avg F1           & \lose{0.97}        & \win{0.98}        & ResNet \\
+Weighted avg precision & \tiew{0.99}        & \tiew{0.99}       & Tie \\
+Weighted avg recall    & \tiew{0.99}        & \tiew{0.99}       & Tie \\
+Weighted avg F1        & \tiew{0.99}        & \tiew{0.99}       & Tie \\
+Total misclassified    & \lose{23 / 1{,}847}& \win{15 / 1{,}847}& ResNet \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+% ═══════════════════════════════════════════════════════════════════════════════
+\section{Per-Class Classification Report}
+% ═══════════════════════════════════════════════════════════════════════════════
+
+\begin{table}[H]
+\centering
+\caption{Full per-class classification report — Precision / Recall / F1 / Support}
+\begin{tabular}{lC{1.7cm}C{1.7cm}C{1.7cm}C{1cm}C{1.7cm}C{1.7cm}C{1.7cm}C{1cm}}
+\toprule
+ & \multicolumn{4}{c}{\cellcolor{secondary}\color{white}\textbf{EfficientNet-B0}}
+ & \multicolumn{4}{c}{\cellcolor{primary}\color{white}\textbf{ResNet50V2}} \\
+\cmidrule(lr){2-5}\cmidrule(lr){6-9}
+\textbf{Class} & Prec & Rec & F1 & Sup & Prec & Rec & F1 & Sup \\
+\midrule
+yawn        & 0.97        & \lose{0.86} & \lose{0.91} & 84
+            & 0.97        & \win{0.89}  & \win{0.93}  & 84 \\
+no\_yawn    & \lose{0.87} & 0.97        & \lose{0.92} & 76
+            & \win{0.90}  & 0.97        & \win{0.94}  & 76 \\
+Closed      & \lose{0.99} & 1.00        & \lose{0.99} & 223
+            & \win{1.00}  & \win{1.00}  & \win{1.00}  & 223 \\
+Open        & 1.00        & \lose{0.99} & 1.00        & 228
+            & 1.00        & \win{1.00}  & 1.00        & 228 \\
+front       & 1.00        & \lose{0.99} & \lose{0.99} & 594
+            & 1.00        & \win{0.99}  & \win{1.00}  & 594 \\
+down        & \lose{0.99} & 1.00        & \lose{0.99} & 642
+            & \win{1.00}  & 1.00        & \win{1.00}  & 642 \\
+\midrule
+macro avg   & \lose{0.97} & \lose{0.97} & \lose{0.97} & 1847
+            & \win{0.98}  & \win{0.98}  & \win{0.98}  & 1847 \\
+wtd avg     & 0.99        & 0.99        & 0.99        & 1847
+            & 0.99        & 0.99        & 0.99        & 1847 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+% ═══════════════════════════════════════════════════════════════════════════════
+\section{Confusion Matrices}
+% ═══════════════════════════════════════════════════════════════════════════════
+
+\begin{figure}[H]
+  \centering
+  \begin{subfigure}[t]{0.48\textwidth}
+    \includegraphics[width=\linewidth]{images/efficientnet_confusion_matrix.png}
+    \caption{EfficientNet-B0 — \textbf{23 total errors}}
+  \end{subfigure}
+  \hfill
+  \begin{subfigure}[t]{0.48\textwidth}
+    \includegraphics[width=\linewidth]{images/resnet_confusion_matrix.png}
+    \caption{ResNet50V2 — \textbf{15 total errors}}
+  \end{subfigure}
+  \caption{Confusion matrices on the 1{,}847-sample test set.
+           Both models make errors almost exclusively in the
+           \textit{yawn}/\textit{no\_yawn} and \textit{front}/\textit{down} pairs.}
+\end{figure}
+
+\begin{table}[H]
+\centering
+\caption{Exact confusion matrix values}
+\begin{tabular}{lC{1.5cm}C{1.5cm}C{1.5cm}C{1.5cm}C{1.5cm}C{1.5cm}}
+\toprule
+\multicolumn{7}{c}{\cellcolor{secondary}\color{white}\textbf{EfficientNet-B0}} \\
+\midrule
+\textbf{True\textbackslash Pred} & yawn & no\_yn & Closed & Open & front & down \\
+\midrule
+yawn    & \win{72} & \lose{11} & 1 & 0 & 0 & 0 \\
+no\_yawn& 2 & \win{74} & 0 & 0 & 0 & 0 \\
+Closed  & 0 & 0 & \win{223} & 0 & 0 & 0 \\
+Open    & 0 & 0 & \lose{2}  & \win{226} & 0 & 0 \\
+front   & 0 & 0 & 0 & 0 & \win{587} & \lose{7} \\
+down    & 0 & 0 & 0 & 0 & 0 & \win{642} \\
+\bottomrule
+\end{tabular}
+
+\vspace{0.8em}
+
+\begin{tabular}{lC{1.5cm}C{1.5cm}C{1.5cm}C{1.5cm}C{1.5cm}C{1.5cm}}
+\toprule
+\multicolumn{7}{c}{\cellcolor{primary}\color{white}\textbf{ResNet50V2}} \\
+\midrule
+\textbf{True\textbackslash Pred} & yawn & no\_yn & Closed & Open & front & down \\
+\midrule
+yawn    & \win{75} & \lose{8} & 1 & 0 & 0 & 0 \\
+no\_yawn& 2 & \win{74} & 0 & 0 & 0 & 0 \\
+Closed  & 0 & 0 & \win{222} & 1 & 0 & 0 \\
+Open    & 0 & 0 & 0 & \win{228} & 0 & 0 \\
+front   & 0 & 0 & 0 & 0 & \win{591} & \lose{3} \\
+down    & 0 & 0 & 0 & 0 & 0 & \win{642} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{table}[H]
+\centering
+\caption{Error-by-error breakdown}
+\begin{tabular}{L{4.5cm}C{3.5cm}C{3.5cm}C{2.2cm}}
+\toprule
+\hdr{Error type} & \hdr{EfficientNet-B0} & \hdr{ResNet50V2} & \hdr{Winner} \\
+\midrule
+yawn $\to$ no\_yawn & \lose{11}  & \win{8}  & ResNet \\
+yawn $\to$ Closed   & 1          & 1        & Tie \\
+no\_yawn $\to$ yawn & 2          & 2        & Tie \\
+Closed $\to$ Open   & \win{0}    & \lose{1} & EfficientNet \\
+Open $\to$ Closed   & \lose{2}   & \win{0}  & ResNet \\
+front $\to$ down    & \lose{7}   & \win{3}  & ResNet \\
+\midrule
+\textbf{Total}      & \lose{\textbf{23}} & \win{\textbf{15}} & \textbf{ResNet} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+% ═══════════════════════════════════════════════════════════════════════════════
+\section{Per-Class Accuracy}
+% ═══════════════════════════════════════════════════════════════════════════════
+
+\begin{figure}[H]
+  \centering
+  \begin{subfigure}[t]{0.48\textwidth}
+    \includegraphics[width=\linewidth]{images/efficientnet_per_class_accuracy.png}
+    \caption{EfficientNet-B0}
+  \end{subfigure}
+  \hfill
+  \begin{subfigure}[t]{0.48\textwidth}
+    \includegraphics[width=\linewidth]{images/resnet_per_class_accuracy.png}
+    \caption{ResNet50V2}
+  \end{subfigure}
+  \caption{Per-class accuracy. The \textit{yawn} class is the weak point for both models,
+           with ResNet achieving 89.3\% vs.\ EfficientNet's 85.7\%.}
+\end{figure}
+
+\begin{table}[H]
+\centering
+\caption{Per-class accuracy — exact values}
+\begin{tabular}{lC{3.8cm}C{3.8cm}C{2.5cm}}
+\toprule
+\hdr{Class} & \hdr{EfficientNet-B0} & \hdr{ResNet50V2} & \hdr{Winner} \\
+\midrule
+yawn     & \lose{85.7\%} & \win{89.3\%}  & ResNet \\
+no\_yawn & \tiew{97.4\%} & \tiew{97.4\%} & Tie \\
+Closed   & \win{100.0\%} & \lose{99.6\%} & EfficientNet \\
+Open     & \lose{99.1\%} & \win{100.0\%} & ResNet \\
+front    & \lose{98.8\%} & \win{99.5\%}  & ResNet \\
+down     & \tiew{100.0\%}& \tiew{100.0\%}& Tie \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+% ═══════════════════════════════════════════════════════════════════════════════
+\section{ROC Curves \& AUC Scores}
+% ═══════════════════════════════════════════════════════════════════════════════
+
+\begin{figure}[H]
+  \centering
+  \begin{subfigure}[t]{0.48\textwidth}
+    \includegraphics[width=\linewidth]{images/efficientnet_roc.png}
+    \caption{EfficientNet-B0}
+  \end{subfigure}
+  \hfill
+  \begin{subfigure}[t]{0.48\textwidth}
+    \includegraphics[width=\linewidth]{images/resnet_roc.png}
+    \caption{ResNet50V2}
+  \end{subfigure}
+  \caption{ROC curves (one-vs-rest strategy). Both models achieve near-perfect AUC.
+           All curves hug the top-left corner, indicating excellent class discrimination
+           even for the weaker \textit{yawn}/\textit{no\_yawn} classes.}
+\end{figure}
+
+\begin{table}[H]
+\centering
+\caption{ROC AUC per class — one-vs-rest}
+\begin{tabular}{lC{3.8cm}C{3.8cm}C{2.5cm}}
+\toprule
+\hdr{Class} & \hdr{EfficientNet-B0} & \hdr{ResNet50V2} & \hdr{Winner} \\
+\midrule
+yawn     & \tiew{0.999} & \tiew{0.999} & Tie \\
+no\_yawn & \tiew{0.999} & \tiew{0.999} & Tie \\
+Closed   & \tiew{1.000} & \tiew{1.000} & Tie \\
+Open     & \tiew{1.000} & \tiew{1.000} & Tie \\
+front    & \tiew{1.000} & \tiew{1.000} & Tie \\
+down     & \tiew{1.000} & \tiew{1.000} & Tie \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{tcolorbox}[summarybox, title=AUC Interpretation]
+AUC is insensitive to the small differences between the models here — both achieve
+essentially perfect discrimination at the ranking level.
+The precision-recall curves and confusion matrices are more informative for this
+near-perfect but imbalanced setting.
+\end{tcolorbox}
+
+% ═══════════════════════════════════════════════════════════════════════════════
+\section{Precision-Recall Curves}
+% ═══════════════════════════════════════════════════════════════════════════════
+
+\begin{figure}[H]
+  \centering
+  \begin{subfigure}[t]{0.48\textwidth}
+    \includegraphics[width=\linewidth]{images/efficientnet_pr.png}
+    \caption{EfficientNet-B0}
+  \end{subfigure}
+  \hfill
+  \begin{subfigure}[t]{0.48\textwidth}
+    \includegraphics[width=\linewidth]{images/resnet_pr.png}
+    \caption{ResNet50V2}
+  \end{subfigure}
+  \caption{Precision-Recall curves with Average Precision (AP) scores.
+           For the harder \textit{yawn} and \textit{no\_yawn} classes,
+           ResNet achieves slightly higher AP, reflecting better confidence calibration.}
+\end{figure}
+
+\begin{table}[H]
+\centering
+\caption{Average Precision (AP) per class}
+\begin{tabular}{lC{3.8cm}C{3.8cm}C{2.5cm}}
+\toprule
+\hdr{Class} & \hdr{EfficientNet-B0} & \hdr{ResNet50V2} & \hdr{Winner} \\
+\midrule
+yawn     & \lose{0.981} & \win{0.986} & ResNet \\
+no\_yawn & \lose{0.975} & \win{0.985} & ResNet \\
+Closed   & \tiew{1.000} & \tiew{1.000} & Tie \\
+Open     & \tiew{1.000} & \tiew{1.000} & Tie \\
+front    & \tiew{1.000} & \tiew{1.000} & Tie \\
+down     & \tiew{1.000} & \tiew{1.000} & Tie \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+% ═══════════════════════════════════════════════════════════════════════════════
+\section{Error Analysis — Misclassification Gallery}
+% ═══════════════════════════════════════════════════════════════════════════════
+
+\begin{figure}[H]
+  \centering
+  \begin{subfigure}[t]{0.48\textwidth}
+    \includegraphics[width=\linewidth]{images/efficientnet_misclassified.png}
+    \caption{EfficientNet-B0 — \textbf{23 misclassified} images}
+  \end{subfigure}
+  \hfill
+  \begin{subfigure}[t]{0.48\textwidth}
+    \includegraphics[width=\linewidth]{images/resnet_misclassified.png}
+    \caption{ResNet50V2 — \textbf{15 misclassified} images}
+  \end{subfigure}
+  \caption{Up to 16 misclassified images shown per model (true label top, predicted label bottom).}
+\end{figure}
+
+\begin{tcolorbox}[findingbox, title=Error Pattern Analysis]
+\begin{itemize}[noitemsep, leftmargin=1.2em]
+  \item \textbf{yawn $\leftrightarrow$ no\_yawn}: The dominant error for both models.
+        These classes are inherently ambiguous — subtle mouth openings without
+        full yawn stretching are hard to distinguish. The Haar-cascade face crop
+        used during loading may also discard context that helps disambiguate.
+  \item \textbf{front $\to$ down}: EfficientNet makes 7 such errors vs.\ ResNet's 3.
+        Both classes are head-pose images, and subtle downward tilts at the
+        boundary of the two classes are visually similar.
+  \item \textbf{Closed/Open}: Both models are near-perfect here;
+        EfficientNet makes no Open$\to$Closed errors but 2 Open$\to$Closed errors,
+        while ResNet makes only 1 Closed$\to$Open error.
+\end{itemize}
+\end{tcolorbox}
+
+% ═══════════════════════════════════════════════════════════════════════════════
+\section{Interpretability — Grad-CAM Heatmaps}
+% ═══════════════════════════════════════════════════════════════════════════════
+
+\begin{figure}[H]
+  \centering
+  \begin{subfigure}[t]{\textwidth}
+    \includegraphics[width=\linewidth]{images/efficientnet_gradcam.png}
+    \caption{EfficientNet-B0 — target layer: \texttt{top\_conv}\\
+             \small Top row: original images. Bottom row: Grad-CAM overlay.}
+  \end{subfigure}
+  \vspace{0.8em}
+  \begin{subfigure}[t]{\textwidth}
+    \includegraphics[width=\linewidth]{images/resnet_gradcam.png}
+    \caption{ResNet50V2 — target layer: \texttt{conv5\_block3\_3\_conv}\\
+             \small Top row: original images. Bottom row: Grad-CAM overlay.}
+  \end{subfigure}
+  \caption{Grad-CAM heatmaps — one representative sample per class.
+           The heatmap colour goes from blue (low attention) to red (high attention).}
+\end{figure}
+
+\begin{table}[H]
+\centering
+\caption{Grad-CAM attention quality — qualitative assessment}
+\begin{tabular}{lL{4.5cm}L{4.5cm}}
+\toprule
+\hdr{Class} & \hdr{EfficientNet-B0} & \hdr{ResNet50V2} \\
+\midrule
+yawn / no\_yawn & Broad face + mouth region   & Tighter mouth focus \\
+Closed / Open   & Eye region (diffuse spread) & Eye region (more compact) \\
+front / down    & Head + some background      & Head orientation, less background \\
+\midrule
+\textbf{Overall} & Correct but diffuse        & \textbf{More precise and localised} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{tcolorbox}[summarybox, title=Grad-CAM Significance for the Thesis]
+Both models attend to the correct facial regions — mouth for yawn, eyes for
+closed/open, head orientation for front/down. This confirms the models are not
+exploiting background shortcuts or dataset artefacts.
+ResNet's tighter activations suggest its deeper head (with extra BatchNorm and
+hidden layer) produces more discriminative, spatially-focused features.
+\end{tcolorbox}
+
+% ═══════════════════════════════════════════════════════════════════════════════
+\section{Interpretability — t-SNE Feature Embeddings}
+% ═══════════════════════════════════════════════════════════════════════════════
+
+\begin{figure}[H]
+  \centering
+  \begin{subfigure}[t]{0.48\textwidth}
+    \includegraphics[width=\linewidth]{images/efficientnet_tsne.png}
+    \caption{EfficientNet-B0 — more class overlap}
+  \end{subfigure}
+  \hfill
+  \begin{subfigure}[t]{0.48\textwidth}
+    \includegraphics[width=\linewidth]{images/resnet_tsne.png}
+    \caption{ResNet50V2 — better class separation}
+  \end{subfigure}
+  \caption{t-SNE projection of GlobalAveragePooling2D layer embeddings
+           (up to 2{,}000 randomly sampled test images).
+           Tighter, more separated clusters indicate richer learned representations.}
+\end{figure}
+
+\begin{table}[H]
+\centering
+\caption{t-SNE cluster quality — qualitative comparison}
+\begin{tabular}{lL{4.5cm}L{4.5cm}}
+\toprule
+\hdr{Class} & \hdr{EfficientNet-B0} & \hdr{ResNet50V2} \\
+\midrule
+Closed   & Partially mixed with Open/front & \textbf{Tight, clean cluster} \\
+Open     & Partially mixed with Closed     & \textbf{Tight, clean cluster} \\
+yawn     & Corner cluster, some overlap    & Overlaps with no\_yawn \\
+no\_yawn & Mixed with yawn                 & Overlaps with yawn \\
+front    & Very fragmented across plot     & Fragmented, more contained \\
+down     & Scattered sub-clusters          & Clear distinct sub-clusters \\
+\midrule
+\textbf{Overall} & More class overlap; less separable & \textbf{Better separation overall} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{tcolorbox}[findingbox, title=t-SNE Interpretation]
+The yawn/no\_yawn overlap in \textbf{both} models' embedding spaces directly
+explains why those two classes have the worst classification scores —
+the network representations themselves are not fully separable for these classes,
+which is consistent with the confusion matrix errors.
+ResNet's better-separated Closed/Open clusters explain its perfect 100\% accuracy
+on those two classes vs.\ EfficientNet's 99.6\% / 99.1\%.
+\end{tcolorbox}
+
+% ═══════════════════════════════════════════════════════════════════════════════
+\section{Final Verdict}
+% ═══════════════════════════════════════════════════════════════════════════════
+
+\begin{table}[H]
+\centering
+\caption{Head-to-head summary across all evaluation dimensions}
+\begin{tabular}{L{5.5cm}C{3.2cm}C{3.2cm}C{2cm}}
+\toprule
+\hdr{Dimension} & \hdr{EfficientNet-B0} & \hdr{ResNet50V2} & \hdr{Winner} \\
+\midrule
+\multicolumn{4}{l}{\cellcolor{lightbg}\textit{Training}} \\
+Total epochs          & \lose{53}          & \win{41}          & ResNet \\
+Best val accuracy     & \lose{98.81\%}     & \win{99.19\%}     & ResNet \\
+Best val loss         & \lose{0.0360}      & \win{0.0258}      & ResNet \\
+Convergence           & \lose{Slow, noisy} & \win{Fast, smooth}& ResNet \\
+\midrule
+\multicolumn{4}{l}{\cellcolor{lightbg}\textit{Test Performance}} \\
+Overall accuracy      & \tiew{99\%}        & \tiew{99\%}       & Tie \\
+Macro F1              & \lose{0.97}        & \win{0.98}        & ResNet \\
+Total errors          & \lose{23}          & \win{15}          & ResNet \\
+Yawn accuracy         & \lose{85.7\%}      & \win{89.3\%}      & ResNet \\
+No\_yawn accuracy     & \tiew{97.4\%}      & \tiew{97.4\%}     & Tie \\
+Closed accuracy       & \win{100.0\%}      & \lose{99.6\%}     & EfficientNet \\
+Open accuracy         & \lose{99.1\%}      & \win{100.0\%}     & ResNet \\
+Front accuracy        & \lose{98.8\%}      & \win{99.5\%}      & ResNet \\
+Down accuracy         & \tiew{100.0\%}     & \tiew{100.0\%}    & Tie \\
+\midrule
+\multicolumn{4}{l}{\cellcolor{lightbg}\textit{Ranking Metrics}} \\
+AUC (yawn/no\_yawn)   & \tiew{0.999}       & \tiew{0.999}      & Tie \\
+AP (yawn)             & \lose{0.981}       & \win{0.986}       & ResNet \\
+AP (no\_yawn)         & \lose{0.975}       & \win{0.985}       & ResNet \\
+\midrule
+\multicolumn{4}{l}{\cellcolor{lightbg}\textit{Interpretability}} \\
+Grad-CAM localisation & Correct, diffuse   & \win{Correct, precise} & ResNet \\
+t-SNE separability    & \lose{More overlap}& \win{Better separation}& ResNet \\
+\midrule
+\multicolumn{4}{l}{\cellcolor{lightbg}\textit{Practical Considerations}} \\
+Parameters            & \win{$\sim$4M}    & \lose{$\sim$23.5M}& EfficientNet \\
+Inference speed       & \win{Faster}      & \lose{Slower}     & EfficientNet \\
+Edge deployment       & \win{Suitable}    & \lose{Heavier}    & EfficientNet \\
+\midrule
+\textbf{Total wins}   & \lose{\textbf{2}} & \win{\textbf{12}} & \textbf{ResNet} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\vspace{1em}
+
+\begin{tcolorbox}[summarybox, title=Conclusion]
+\textbf{ResNet50V2 is the stronger model} for this drowsiness detection task,
+winning on 12 out of 14 dimensions evaluated.
+It produces 35\% fewer errors (15 vs.\ 23), better macro F1 (0.98 vs.\ 0.97),
+lower validation loss (0.026 vs.\ 0.036), faster and smoother convergence
+(41 vs.\ 53 epochs), and more separable internal feature representations.
+
+\medskip
+The \textbf{yawn class remains the hardest} for both models (85.7\% vs.\ 89.3\%),
+caused by a combination of small sample size (84 test samples), inherent visual
+ambiguity with no\_yawn, and the Haar-cascade face-crop pipeline discarding
+context that might help disambiguate.
+
+\medskip
+EfficientNet's sole advantages are its \textbf{$6\times$ smaller parameter count}
+($\sim$4M vs.\ $\sim$23.5M) and faster inference — relevant if the model
+is deployed on embedded hardware (e.g., a Raspberry Pi in a vehicle).
+For server-side or GPU inference where accuracy is the priority, ResNet50V2
+is the clear choice.
+\end{tcolorbox}
+
+\end{document}
