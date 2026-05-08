@@ -1,57 +1,78 @@
-# Drowsiness Detector — App
+# Drowsiness Detector — Flutter App
 
-Phone-first PWA that watches the driver through the front camera and intervenes when fatigue is detected.
+Phone-first drowsiness detection app. Watches the driver via the front camera and intervenes (visual + audio + haptic alerts → simulated emergency call) when fatigue is detected.
 
 See **[DESIGN.md](DESIGN.md)** for the full spec.
 
+## Prerequisites
+
+1. **Flutter SDK 3.24+** — install per the official guide:
+   <https://docs.flutter.dev/get-started/install/windows>
+   - For Windows desktop testing also enable: `flutter config --enable-windows-desktop`
+   - Verify: `flutter doctor` (resolve any reported issues for Windows + iOS).
+2. **Python 3.10 / 3.11** — for the one-time TFLite conversion.
+3. (Optional, for iPhone deploy later) a Mac with Xcode, or use a CI service.
+
 ## One-time setup
 
-### 1. Install Node deps
+### 1. Convert the model
+The app loads `assets/models/drowsiness_efficientnet_b0.tflite`. Build it once from the existing `.h5`:
+
 ```powershell
 cd DrowsinessApp
-npm install
-```
-
-### 2. Convert the Keras model to TF.js (one-time)
-The app loads `public/models/efficientnet_b0/`. To produce it from the existing `.h5`:
-
-```powershell
-pip install tensorflow tensorflowjs
+pip install "tensorflow==2.15.*"
 python scripts/convert_model.py
 ```
 
-This calls `tensorflowjs_converter` on `../Models/drowsiness_efficientnet_b0.h5` and writes the converted graph model into `public/models/efficientnet_b0/`.
+This produces `assets/models/drowsiness_efficientnet_b0.tflite` (~16 MB).
 
-> If conversion errors out, the most common cause is a mismatched `tensorflow` / `tensorflowjs` version. The pair `tensorflow==2.15.*` + `tensorflowjs==4.20.*` is known to work.
+### 2. Bootstrap platform folders
+This repo ships only the Flutter source (`lib/`, `assets/`, `pubspec.yaml`). The platform-specific folders (`windows/`, `ios/`, `android/`) are created by Flutter:
 
-## Run (laptop, dev)
 ```powershell
-npm run dev
+flutter create .
 ```
-Open <http://localhost:5173>.
 
-## Run (iPhone — same Wi-Fi as laptop)
+`flutter create .` adds platform scaffolding without overwriting existing files.
 
-1. Find your laptop's LAN IP: `ipconfig` → look for `IPv4 Address` (e.g. `192.168.1.42`).
-2. On iPhone Safari: open `http://192.168.1.42:5173`.
-3. Tap Share → **Add to Home Screen** → app installs as standalone (fullscreen, home-screen icon).
-
-> ⚠️ iOS Safari requires HTTPS for camera access on non-localhost origins. For phone testing you'll need either:
-> - Run `npm run dev -- --https` after generating a self-signed cert, **or**
-> - Build (`npm run build`) and serve via a tool like `caddy` with a local cert, **or**
-> - Use a tunnel like `ngrok http 5173` (gives you an HTTPS URL).
->
-> The simplest option for thesis demos: `ngrok http 5173`.
-
-## Run (production-style preview)
+### 3. Install Dart dependencies
 ```powershell
-npm run build
-npm run preview
+flutter pub get
+```
+
+## Run
+
+### Windows desktop (your laptop)
+```powershell
+flutter run -d windows
+```
+First-run note: the Windows build of `opencv_dart` and `tflite_flutter` ships native DLLs that take ~30 s to compile on first launch.
+
+### iPhone (when you have Mac access)
+```powershell
+flutter run -d <your-iphone-id>
+```
+Requires Xcode + Apple Developer cert (free tier works for sideloading to your own device for 7 days).
+
+### Android (if you ever get a device)
+```powershell
+flutter run -d <android-id>
 ```
 
 ## Project layout
-See `DESIGN.md §9`.
+See [DESIGN.md §9](DESIGN.md#9-project-layout).
 
 ## Notes
-- All inference is on-device (TF.js + OpenCV.js in the browser). No backend, no network calls during a drive.
-- The first load downloads the model (~16 MB). After that the service worker caches everything and the app works offline.
+- **All inference is on-device**: TFLite + OpenCV native, no network calls during a drive.
+- **First launch downloads nothing.** All assets ship in the bundle.
+- **iOS permissions:** the camera permission usage description goes in `ios/Runner/Info.plist`. After `flutter create .` adds the file, edit it to include:
+  ```xml
+  <key>NSCameraUsageDescription</key>
+  <string>Used to detect driver drowsiness.</string>
+  ```
+- **Android permissions:** `android/app/src/main/AndroidManifest.xml` should include:
+  ```xml
+  <uses-permission android:name="android.permission.CAMERA" />
+  <uses-permission android:name="android.permission.VIBRATE" />
+  <uses-permission android:name="android.permission.WAKE_LOCK" />
+  ```

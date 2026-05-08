@@ -1,41 +1,43 @@
 """
-Convert drowsiness_efficientnet_b0.h5 → TensorFlow.js graph model.
+Convert drowsiness_efficientnet_b0.h5 -> drowsiness_efficientnet_b0.tflite
 
 Run once:
-    pip install tensorflow tensorflowjs
+    pip install "tensorflow==2.15.*"
     python scripts/convert_model.py
 
-Output: public/models/efficientnet_b0/{model.json, group1-shard*.bin}
+Output: assets/models/drowsiness_efficientnet_b0.tflite
 """
-import os
-import subprocess
-import sys
 from pathlib import Path
+import sys
+
+import tensorflow as tf
 
 HERE = Path(__file__).resolve().parent
 APP_ROOT = HERE.parent
 PROJECT_ROOT = APP_ROOT.parent
 
 H5_PATH = PROJECT_ROOT / "Models" / "drowsiness_efficientnet_b0.h5"
-OUT_DIR = APP_ROOT / "public" / "models" / "efficientnet_b0"
+OUT_PATH = APP_ROOT / "assets" / "models" / "drowsiness_efficientnet_b0.tflite"
 
 
 def main() -> None:
     if not H5_PATH.exists():
         sys.exit(f"Model not found: {H5_PATH}")
 
-    OUT_DIR.mkdir(parents=True, exist_ok=True)
+    print(f"Loading {H5_PATH} ...")
+    model = tf.keras.models.load_model(str(H5_PATH), compile=False)
 
-    cmd = [
-        sys.executable, "-m", "tensorflowjs.converters.converter",
-        "--input_format=keras",
-        "--output_format=tfjs_graph_model",
-        str(H5_PATH),
-        str(OUT_DIR),
-    ]
-    print("Running:", " ".join(cmd))
-    subprocess.check_call(cmd)
-    print(f"\nDone. Model written to {OUT_DIR}")
+    converter = tf.lite.TFLiteConverter.from_keras_model(model)
+    converter.optimizations = [tf.lite.Optimize.DEFAULT]
+    # Keep float32 inputs/outputs (EfficientNetB0's internal preprocess is float).
+    converter.target_spec.supported_types = [tf.float32]
+
+    print("Converting ...")
+    tflite_bytes = converter.convert()
+
+    OUT_PATH.parent.mkdir(parents=True, exist_ok=True)
+    OUT_PATH.write_bytes(tflite_bytes)
+    print(f"\nWrote {OUT_PATH}  ({len(tflite_bytes) / (1024 * 1024):.1f} MB)")
 
 
 if __name__ == "__main__":

@@ -1,0 +1,54 @@
+name: drowsiness_app
+description: On-device driver drowsiness detection.
+publish_to: 'none'
+version: 0.1.0+1
+
+environment:
+  sdk: '>=3.4.0 <4.0.0'
+  flutter: '>=3.24.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+  cupertino_icons: ^1.0.8
+
+  # Camera (iOS, Android, Windows desktop, macOS)
+  camera: ^0.11.0+2
+
+  # Inference
+  tflite_flutter: ^0.11.0
+
+  # OpenCV (Haar cascades)
+  opencv_dart: ^1.3.0
+
+  # Audio (multi-track concurrent playback)
+  audioplayers: ^6.1.0
+
+  # Storage
+  sqflite: ^2.4.0
+  sqflite_common_ffi: ^2.3.4   # Windows desktop support
+  path_provider: ^2.1.5
+  path: ^1.9.0
+  shared_preferences: ^2.3.3
+
+  # System
+  vibration: ^2.0.0
+  wakelock_plus: ^1.2.8
+  permission_handler: ^11.3.1
+
+  # UI / nav
+  go_router: ^14.6.1
+  google_fonts: ^6.2.1
+  intl: ^0.19.0
+  uuid: ^4.5.1
+
+dev_dependencies:
+  flutter_lints: ^5.0.0
+
+flutter:
+  uses-material-design: true
+
+  assets:
+    - assets/sounds/
+    - assets/haarcascades/
+    - assets/models/
