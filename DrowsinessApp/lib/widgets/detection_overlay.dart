@@ -106,7 +106,18 @@ class _Painter extends CustomPainter {
       tp.height + 2,
     );
     canvas.drawRect(tagRect, Paint()..color = color);
+
+    // The whole detection layer is wrapped in a Transform.scale(-1, 1) for the
+    // mirrored selfie view. Rectangles are symmetric so they look fine, but
+    // text gets visually flipped. Counter-flip locally around the label's
+    // horizontal centre so glyphs read correctly on screen.
+    final cx = tagRect.center.dx;
+    canvas.save();
+    canvas.translate(cx, 0);
+    canvas.scale(-1.0, 1.0);
+    canvas.translate(-cx, 0);
     tp.paint(canvas, tagRect.topLeft + const Offset(3, 1));
+    canvas.restore();
   }
 
   @override

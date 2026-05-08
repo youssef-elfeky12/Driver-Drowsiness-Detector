@@ -1,8 +1,10 @@
 import 'dart:async';
 import 'dart:io';
+import 'dart:ui' as ui;
 
 import 'package:camera/camera.dart';
 import 'package:flutter/material.dart';
+import 'package:opencv_dart/opencv_dart.dart' as cv;
 import 'package:permission_handler/permission_handler.dart';
 import 'package:uuid/uuid.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
@@ -10,6 +12,7 @@ import 'package:wakelock_plus/wakelock_plus.dart';
 import '../models/types.dart';
 import '../services/alert_engine.dart';
 import '../services/audio_engine.dart';
+import '../services/desktop_camera.dart';
 import '../services/detector.dart';
 import '../services/settings.dart';
 import '../services/storage.dart';
@@ -19,6 +22,9 @@ import '../widgets/emergency_dialer.dart';
 import '../widgets/overlays.dart';
 import '../widgets/status_bar.dart';
 
+bool get _useDesktopCamera =>
+    Platform.isWindows || Platform.isLinux || Platform.isMacOS;
+
 class DrivePage extends StatefulWidget {
   const DrivePage({super.key});
 
@@ -27,7 +33,13 @@ class DrivePage extends StatefulWidget {
 }
 
 class _DrivePageState extends State<DrivePage> {
+  // Mobile camera (iOS / Android)
   CameraController? _camera;
+  // Desktop camera (Windows / macOS / Linux) — uses opencv_dart VideoCapture
+  final DesktopCamera _desktopCam = DesktopCamera();
+  Timer? _desktopFrameTimer;
+  ui.Image? _desktopFrame;
+
   final Detector _detector = Detector();
   final AudioEngine _audio = AudioEngine();
   AlertEngine? _engine;
@@ -62,9 +74,6 @@ class _DrivePageState extends State<DrivePage> {
   }
 
   Future<void> _bootstrap() async {
-    setState(() => _loadingMsg = 'Permissions…');
-    await Permission.camera.request();
-
     setState(() => _loadingMsg = 'Loading audio…');
     await _audio.init();
 
@@ -72,20 +81,26 @@ class _DrivePageState extends State<DrivePage> {
     await _detector.init(onProgress: (m) => setState(() => _loadingMsg = m));
 
     setState(() => _loadingMsg = 'Camera…');
-    final cams = await availableCameras();
-    final front = cams.firstWhere(
-      (c) => c.lensDirection == CameraLensDirection.front,
-      orElse: () => cams.first,
-    );
-    _camera = CameraController(
-      front,
-      ResolutionPreset.medium,
-      enableAudio: false,
-      imageFormatGroup: Platform.isAndroid
-          ? ImageFormatGroup.yuv420
-          : ImageFormatGroup.bgra8888,
-    );
-    await _camera!.initialize();
+    if (_useDesktopCamera) {
+      // OpenCV VideoCapture path — same backend as the existing Python script.
+      await _desktopCam.open();
+    } else {
+      await Permission.camera.request();
+      final cams = await availableCameras();
+      final front = cams.firstWhere(
+        (c) => c.lensDirection == CameraLensDirection.front,
+        orElse: () => cams.first,
+      );
+      _camera = CameraController(
+        front,
+        ResolutionPreset.medium,
+        enableAudio: false,
+        imageFormatGroup: Platform.isAndroid
+            ? ImageFormatGroup.yuv420
+            : ImageFormatGroup.bgra8888,
+      );
+      await _camera!.initialize();
+    }
 
     _settings = await SettingsService.load();
     _audio.setMasterVolume(_settings.alarmVolume);
@@ -100,6 +115,9 @@ class _DrivePageState extends State<DrivePage> {
   void dispose() {
     _uiTicker?.cancel();
     _connectedTimer?.cancel();
+    _desktopFrameTimer?.cancel();
+    _desktopCam.close();
+    _desktopFrame?.dispose();
     _camera?.dispose();
     _engine?.stop();
     _audio.dispose();
@@ -109,7 +127,8 @@ class _DrivePageState extends State<DrivePage> {
   }
 
   Future<void> _start() async {
-    if (!_ready || _camera == null) return;
+    if (!_ready) return;
+    if (!_useDesktopCamera && _camera == null) return;
     _settings = await SettingsService.load();
     _audio.setMasterVolume(_settings.alarmVolume);
 
@@ -149,10 +168,17 @@ class _DrivePageState extends State<DrivePage> {
       if (mounted) setState(() {});
     });
 
-    await _camera!.startImageStream(_onFrame);
+    if (_useDesktopCamera) {
+      _desktopFrameTimer =
+          Timer.periodic(const Duration(milliseconds: 100), (_) => _onDesktopTick());
+    } else {
+      await _camera!.startImageStream(_onFrame);
+    }
   }
 
   Future<void> _stop() async {
+    _desktopFrameTimer?.cancel();
+    _desktopFrameTimer = null;
     if (_camera != null && _camera!.value.isStreamingImages) {
       await _camera!.stopImageStream();
     }
@@ -196,6 +222,52 @@ class _DrivePageState extends State<DrivePage> {
     }
   }
 
+  // Decouple display (~10 fps) from inference (~4 fps) — when a face is
+  // detected, full Haar+TFLite work is ~150-300ms which would freeze the UI
+  // every tick. Drowsiness thresholds are ≥1.5s of sustained signal so 4 fps
+  // inference is plenty.
+  static const _inferenceIntervalMs = 250;
+  int _lastInferenceMs = 0;
+
+  Future<void> _onDesktopTick() async {
+    if (_paused) return;
+    cv.Mat? frame;
+    try {
+      frame = _desktopCam.readMat();
+      if (frame == null) return;
+
+      // 1) Always update the preview (fast: cvtColor + decodeImageFromPixels).
+      final img = await DesktopCamera.matToUiImage(frame);
+      final old = _desktopFrame;
+      _desktopFrame = img;
+      old?.dispose();
+
+      // 2) Run detection only when the inference interval has elapsed AND a
+      //    previous inference isn't still running (`_busy`).
+      final now = DateTime.now().millisecondsSinceEpoch;
+      if (!_busy &&
+          _engine != null &&
+          now - _lastInferenceMs >= _inferenceIntervalMs) {
+        _busy = true;
+        try {
+          final result =
+              _detector.detectMat(frame, _settings.confidenceThreshold);
+          _lastResult = result;
+          await _engine!.ingest(result);
+          _lastInferenceMs = DateTime.now().millisecondsSinceEpoch;
+        } finally {
+          _busy = false;
+        }
+      }
+
+      if (mounted) setState(() {});
+    } catch (_) {
+      // swallow per-frame errors
+    } finally {
+      frame?.dispose();
+    }
+  }
+
   Future<void> _dismiss() async {
     await _engine?.dismiss();
     setState(() {
@@ -230,83 +302,78 @@ class _DrivePageState extends State<DrivePage> {
       child: Stack(
         fit: StackFit.expand,
         children: [
-          // Camera preview (mirrored for selfie view)
-          if (_camera != null && _camera!.value.isInitialized)
+          // Camera preview + detection boxes (only while running).
+          // Wrap BOTH in the same Transform + FittedBox so the overlay shares
+          // the cover-fit transform and the mirror flip — keeps boxes aligned
+          // with the visible faces regardless of the window aspect ratio.
+          if (_running && _useDesktopCamera && _desktopFrame != null)
+            Positioned.fill(
+              child: ClipRect(
+                child: Transform(
+                  alignment: Alignment.center,
+                  transform: Matrix4.identity()..scale(-1.0, 1.0, 1.0),
+                  child: FittedBox(
+                    fit: BoxFit.cover,
+                    child: SizedBox(
+                      width: _desktopFrame!.width.toDouble(),
+                      height: _desktopFrame!.height.toDouble(),
+                      child: Stack(
+                        children: [
+                          RawImage(
+                            image: _desktopFrame,
+                            width: _desktopFrame!.width.toDouble(),
+                            height: _desktopFrame!.height.toDouble(),
+                          ),
+                          if (_lastResult != null)
+                            DetectionOverlay(
+                              result: _lastResult,
+                              previewSize: Size(
+                                _desktopFrame!.width.toDouble(),
+                                _desktopFrame!.height.toDouble(),
+                              ),
+                              mirrored: false, // parent Transform already mirrors
+                            ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            )
+          else if (_running &&
+              !_useDesktopCamera &&
+              _camera != null &&
+              _camera!.value.isInitialized)
             Transform(
               alignment: Alignment.center,
               transform: Matrix4.identity()..scale(-1.0, 1.0, 1.0),
-              child: CameraPreview(_camera!),
-            )
-          else
-            const Center(child: CircularProgressIndicator()),
-
-          // Detection boxes
-          if (_running && _lastResult != null)
-            LayoutBuilder(builder: (ctx, c) {
-              return DetectionOverlay(
-                result: _lastResult,
-                previewSize: Size(c.maxWidth, c.maxHeight),
-              );
-            }),
+              child: Stack(
+                children: [
+                  CameraPreview(_camera!),
+                  if (_lastResult != null)
+                    LayoutBuilder(builder: (ctx, c) {
+                      return DetectionOverlay(
+                        result: _lastResult,
+                        previewSize: Size(c.maxWidth, c.maxHeight),
+                        mirrored: false,
+                      );
+                    }),
+                ],
+              ),
+            ),
 
           // Status bar
           if (_running)
             StatusBar(
                 level: _level, closedMs: _closedMs, durationMs: tripDur),
 
-          // Start screen
+          // Landing screen — branded hero shown when not driving.
           if (!_running)
             Positioned.fill(
-              child: Container(
-                decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    begin: Alignment.topCenter,
-                    end: Alignment.bottomCenter,
-                    colors: [
-                      Colors.transparent,
-                      AppColors.bg.withOpacity(0.85),
-                      AppColors.bg,
-                    ],
-                  ),
-                ),
-                padding: const EdgeInsets.fromLTRB(24, 24, 24, 48),
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.end,
-                  children: [
-                    const Text(
-                      'Drowsiness Detector',
-                      style: TextStyle(
-                        fontSize: 26,
-                        fontWeight: FontWeight.w800,
-                        letterSpacing: -0.5,
-                      ),
-                    ),
-                    const SizedBox(height: 6),
-                    Text(_loadingMsg,
-                        style: const TextStyle(
-                            color: AppColors.muted, fontSize: 14)),
-                    const SizedBox(height: 24),
-                    SizedBox(
-                      width: 280,
-                      child: ElevatedButton.icon(
-                        onPressed: _ready ? _start : null,
-                        icon: const Icon(Icons.play_arrow_rounded),
-                        label: const Text('Start Drive'),
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: AppColors.primary,
-                          foregroundColor: Colors.white,
-                          disabledBackgroundColor: AppColors.surface2,
-                          disabledForegroundColor: AppColors.muted,
-                          padding: const EdgeInsets.symmetric(vertical: 16),
-                          shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(18)),
-                          textStyle: const TextStyle(
-                              fontSize: 18, fontWeight: FontWeight.w800),
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
+              child: _LandingHero(
+                ready: _ready,
+                loadingMsg: _loadingMsg,
+                onStart: _start,
               ),
             ),
 
@@ -405,6 +472,182 @@ class _DrivePageState extends State<DrivePage> {
             ],
           ),
         ),
+      ),
+    );
+  }
+}
+
+/// Landing hero — shown on the Drive page when no trip is running.
+/// Big animated logo + title + Start button, no live camera in the background.
+class _LandingHero extends StatefulWidget {
+  final bool ready;
+  final String loadingMsg;
+  final VoidCallback onStart;
+  const _LandingHero({
+    required this.ready,
+    required this.loadingMsg,
+    required this.onStart,
+  });
+
+  @override
+  State<_LandingHero> createState() => _LandingHeroState();
+}
+
+class _LandingHeroState extends State<_LandingHero>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _ctrl;
+
+  @override
+  void initState() {
+    super.initState();
+    _ctrl = AnimationController(
+      vsync: this,
+      duration: const Duration(seconds: 4),
+    )..repeat(reverse: true);
+  }
+
+  @override
+  void dispose() {
+    _ctrl.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      decoration: const BoxDecoration(
+        gradient: RadialGradient(
+          center: Alignment(0, -0.3),
+          radius: 1.1,
+          colors: [
+            Color(0xFF1A2330),
+            Color(0xFF0B0F14),
+          ],
+        ),
+      ),
+      padding: const EdgeInsets.fromLTRB(28, 64, 28, 36),
+      child: Column(
+        children: [
+          const Spacer(flex: 2),
+
+          // Animated logo: stacked steering wheel + eye glyph
+          AnimatedBuilder(
+            animation: _ctrl,
+            builder: (_, __) {
+              final t = _ctrl.value;
+              return Container(
+                width: 156,
+                height: 156,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  gradient: LinearGradient(
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                    colors: [
+                      AppColors.primary,
+                      Color.lerp(AppColors.primary, AppColors.amber, t)!,
+                    ],
+                  ),
+                  boxShadow: [
+                    BoxShadow(
+                      color: AppColors.primary.withValues(alpha: 0.35 + 0.15 * t),
+                      blurRadius: 40,
+                      spreadRadius: 4,
+                    ),
+                  ],
+                ),
+                child: const Center(
+                  child: Icon(
+                    Icons.remove_red_eye_outlined,
+                    size: 80,
+                    color: Colors.white,
+                  ),
+                ),
+              );
+            },
+          ),
+
+          const SizedBox(height: 28),
+
+          // Title + tagline
+          ShaderMask(
+            shaderCallback: (rect) => const LinearGradient(
+              colors: [Colors.white, Color(0xFFB6D2FF)],
+            ).createShader(rect),
+            child: const Text(
+              'DROWSY',
+              style: TextStyle(
+                fontSize: 44,
+                fontWeight: FontWeight.w900,
+                letterSpacing: 6,
+                color: Colors.white,
+              ),
+            ),
+          ),
+          const SizedBox(height: 4),
+          const Text(
+            'Eyes on the road. Always.',
+            style: TextStyle(
+              color: AppColors.muted,
+              fontSize: 14,
+              fontWeight: FontWeight.w500,
+              letterSpacing: 0.4,
+            ),
+          ),
+
+          const Spacer(flex: 3),
+
+          // Status pill
+          AnimatedSwitcher(
+            duration: const Duration(milliseconds: 200),
+            child: Row(
+              key: ValueKey(widget.ready),
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Container(
+                  width: 8,
+                  height: 8,
+                  decoration: BoxDecoration(
+                    color: widget.ready ? AppColors.ok : AppColors.amber,
+                    shape: BoxShape.circle,
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Text(
+                  widget.loadingMsg,
+                  style: const TextStyle(
+                    color: AppColors.muted,
+                    fontSize: 13,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+              ],
+            ),
+          ),
+
+          const SizedBox(height: 18),
+
+          // Start button
+          SizedBox(
+            width: double.infinity,
+            child: ElevatedButton.icon(
+              onPressed: widget.ready ? widget.onStart : null,
+              icon: const Icon(Icons.play_arrow_rounded, size: 26),
+              label: const Text('Start Drive'),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: AppColors.primary,
+                foregroundColor: Colors.white,
+                disabledBackgroundColor: AppColors.surface2,
+                disabledForegroundColor: AppColors.muted,
+                padding: const EdgeInsets.symmetric(vertical: 18),
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(20)),
+                textStyle: const TextStyle(
+                    fontSize: 18, fontWeight: FontWeight.w800, letterSpacing: 0.5),
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }

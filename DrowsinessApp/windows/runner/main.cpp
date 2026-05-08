@@ -27,7 +27,7 @@ int APIENTRY wWinMain(_In_ HINSTANCE instance, _In_opt_ HINSTANCE prev,
   FlutterWindow window(project);
   // Phone-shaped portrait window (Pixel 7 aspect: 411 x 891 logical).
   Win32Window::Point origin(120, 60);
-  Win32Window::Size size(440, 900);
+  Win32Window::Size size(380, 780);
   if (!window.Create(L"Drowsiness Detector", origin, size)) {
     return EXIT_FAILURE;
   }

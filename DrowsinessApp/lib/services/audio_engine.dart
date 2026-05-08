@@ -60,6 +60,9 @@ class AudioEngine {
 
   Future<void> startPullover() async {
     if (_pullover.state == PlayerState.playing) return;
+    // Re-assert loop each start: audioplayers can drop the release mode after
+    // a stop()/play() cycle on Windows.
+    await _pullover.setReleaseMode(ReleaseMode.loop);
     await _pullover.play(AssetSource('sounds/PULLOVER.mp3'), volume: _master);
   }
 
@@ -67,6 +70,7 @@ class AudioEngine {
 
   Future<void> startSiren() async {
     if (_siren.state == PlayerState.playing) return;
+    await _siren.setReleaseMode(ReleaseMode.loop);
     await _siren.setVolume(_master);
     await _siren.play(AssetSource('sounds/sirenLoop.mp3'), volume: _master);
   }

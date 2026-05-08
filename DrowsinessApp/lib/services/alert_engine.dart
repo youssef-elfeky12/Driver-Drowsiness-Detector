@@ -11,7 +11,7 @@ typedef DigitCallback = void Function(String digit, int index);
 typedef IntCallback = void Function(int value);
 
 class AlertEngine {
-  static const _sustainMs = 1500;
+  static const _sustainMs = 500;
   static const _cooldownMs = 3000;
   static const _drowsyWindowMs = 30000;
   static const _drowsyThreshold = 3;
@@ -153,12 +153,20 @@ class AlertEngine {
       if (_openSince == 0) _openSince = now;
       if (now - _openSince >= _eyeOpenResetMs) {
         if (_closedSince != 0) {
-          _countdownTimer?.cancel();
-          _countdownTimer = null;
-          await audio.stopAll();
-          _inEmergencyFlow = false;
+          // Lock past 10s: once we've escalated to CRITICAL or EMERGENCY, only
+          // a manual Cancel/dismiss can stop the alarm. Eye-open won't reset.
+          final locked = _level == AlertLevel.critical ||
+              _level == AlertLevel.emergency;
+          if (!locked) {
+            _countdownTimer?.cancel();
+            _countdownTimer = null;
+            await audio.stopAll();
+            _inEmergencyFlow = false;
+            _closedSince = 0;
+          }
+        } else {
+          _closedSince = 0;
         }
-        _closedSince = 0;
       }
     }
 

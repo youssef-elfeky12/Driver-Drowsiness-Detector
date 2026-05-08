@@ -62,10 +62,7 @@ class Detector {
     return path;
   }
 
-  /// Run detection on a CameraImage frame.
-  ///
-  /// We expect BGRA8888 image format (set via ImageFormatGroup.bgra8888 on the
-  /// CameraController). On Android the default may be YUV420 — adapt as needed.
+  /// Run detection on a CameraImage frame (mobile path).
   DetectionResult detect(CameraImage image, double confThreshold) {
     if (!isReady) {
       return DetectionResult(
@@ -75,7 +72,6 @@ class Detector {
         tsMs: DateTime.now().millisecondsSinceEpoch,
       );
     }
-
     final mat = _matFromCameraImage(image);
     if (mat == null) {
       return DetectionResult(
@@ -85,7 +81,24 @@ class Detector {
         tsMs: DateTime.now().millisecondsSinceEpoch,
       );
     }
+    try {
+      return detectMat(mat, confThreshold);
+    } finally {
+      mat.dispose();
+    }
+  }
 
+  /// Run detection on an already-decoded BGR cv.Mat (desktop path).
+  /// Caller owns the Mat lifecycle.
+  DetectionResult detectMat(cv.Mat mat, double confThreshold) {
+    if (!isReady) {
+      return DetectionResult(
+        faces: const [],
+        frameWidth: mat.cols,
+        frameHeight: mat.rows,
+        tsMs: DateTime.now().millisecondsSinceEpoch,
+      );
+    }
     try {
       final gray = cv.cvtColor(mat, cv.COLOR_BGR2GRAY);
       final faces =
@@ -135,12 +148,17 @@ class Detector {
 
       return DetectionResult(
         faces: out,
-        frameWidth: image.width,
-        frameHeight: image.height,
+        frameWidth: mat.cols,
+        frameHeight: mat.rows,
         tsMs: DateTime.now().millisecondsSinceEpoch,
       );
-    } finally {
-      mat.dispose();
+    } catch (_) {
+      return DetectionResult(
+        faces: const [],
+        frameWidth: mat.cols,
+        frameHeight: mat.rows,
+        tsMs: DateTime.now().millisecondsSinceEpoch,
+      );
     }
   }
 

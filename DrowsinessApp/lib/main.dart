@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:go_router/go_router.dart';
 
 import 'pages/drive_page.dart';
 import 'pages/history_page.dart';
@@ -21,37 +20,53 @@ class DrowsinessApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return MaterialApp.router(
+    return MaterialApp(
       title: 'Drowsiness Detector',
       theme: buildTheme(),
       debugShowCheckedModeBanner: false,
-      routerConfig: _router,
+      home: const HomeShell(),
     );
   }
 }
 
-final _router = GoRouter(
-  initialLocation: '/drive',
-  routes: [
-    ShellRoute(
-      builder: (ctx, state, child) => Scaffold(
-        backgroundColor: AppColors.bg,
-        body: SafeArea(
-          top: false,
-          bottom: false,
-          child: Column(
-            children: [
-              Expanded(child: child),
-              const BottomTabs(),
-            ],
-          ),
+/// Tab shell using IndexedStack — keeps all three pages alive across taps so
+/// switching back to Drive doesn't re-bootstrap (camera, model, audio).
+class HomeShell extends StatefulWidget {
+  const HomeShell({super.key});
+  @override
+  State<HomeShell> createState() => _HomeShellState();
+}
+
+class _HomeShellState extends State<HomeShell> {
+  int _index = 0;
+  late final List<Widget> _pages = const [
+    DrivePage(),
+    HistoryPage(),
+    SettingsPage(),
+  ];
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: AppColors.bg,
+      body: SafeArea(
+        top: false,
+        bottom: false,
+        child: Column(
+          children: [
+            Expanded(
+              child: IndexedStack(
+                index: _index,
+                children: _pages,
+              ),
+            ),
+            BottomTabs(
+              activeIndex: _index,
+              onTap: (i) => setState(() => _index = i),
+            ),
+          ],
         ),
       ),
-      routes: [
-        GoRoute(path: '/drive', builder: (_, __) => const DrivePage()),
-        GoRoute(path: '/history', builder: (_, __) => const HistoryPage()),
-        GoRoute(path: '/settings', builder: (_, __) => const SettingsPage()),
-      ],
-    ),
-  ],
-);
+    );
+  }
+}

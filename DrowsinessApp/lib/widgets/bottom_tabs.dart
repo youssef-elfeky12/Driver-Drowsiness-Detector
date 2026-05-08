@@ -1,35 +1,40 @@
 import 'package:flutter/material.dart';
-import 'package:go_router/go_router.dart';
 import '../theme.dart';
 
 class BottomTabs extends StatelessWidget {
-  const BottomTabs({super.key});
+  final int activeIndex;
+  final ValueChanged<int> onTap;
+  const BottomTabs({
+    super.key,
+    required this.activeIndex,
+    required this.onTap,
+  });
 
   static const _items = [
-    (label: 'Drive', path: '/drive', icon: Icons.directions_car_filled),
-    (label: 'History', path: '/history', icon: Icons.history),
-    (label: 'Settings', path: '/settings', icon: Icons.settings),
+    (label: 'Drive', icon: Icons.directions_car_filled),
+    (label: 'History', icon: Icons.history),
+    (label: 'Settings', icon: Icons.settings),
   ];
 
   @override
   Widget build(BuildContext context) {
-    final loc = GoRouterState.of(context).uri.path;
     return Container(
       decoration: BoxDecoration(
-        color: AppColors.surface.withOpacity(0.95),
+        color: AppColors.surface.withValues(alpha: 0.95),
         border: Border(
-          top: BorderSide(color: Colors.white.withOpacity(0.05)),
+          top: BorderSide(color: Colors.white.withValues(alpha: 0.05)),
         ),
       ),
       padding: EdgeInsets.only(
         bottom: MediaQuery.of(context).padding.bottom,
       ),
       child: Row(
-        children: _items.map((it) {
-          final active = loc == it.path;
+        children: List.generate(_items.length, (i) {
+          final it = _items[i];
+          final active = i == activeIndex;
           return Expanded(
             child: InkWell(
-              onTap: () => context.go(it.path),
+              onTap: () => onTap(i),
               child: Padding(
                 padding: const EdgeInsets.symmetric(vertical: 10),
                 child: Column(
@@ -54,7 +59,7 @@ class BottomTabs extends StatelessWidget {
               ),
             ),
           );
-        }).toList(),
+        }),
       ),
     );
   }
