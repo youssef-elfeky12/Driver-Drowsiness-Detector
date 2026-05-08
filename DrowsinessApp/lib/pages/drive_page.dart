@@ -54,6 +54,8 @@ class _DrivePageState extends State<DrivePage> {
   int _closedMs = 0;
   int _countdown = 5;
   String _digitsTyped = '';
+  String? _pressedDigit;
+  Timer? _pressedDigitTimer;
   bool _callingActive = false;
   bool _callConnected = false;
 
@@ -115,6 +117,7 @@ class _DrivePageState extends State<DrivePage> {
   void dispose() {
     _uiTicker?.cancel();
     _connectedTimer?.cancel();
+    _pressedDigitTimer?.cancel();
     _desktopFrameTimer?.cancel();
     _desktopCam.close();
     _desktopFrame?.dispose();
@@ -142,8 +145,17 @@ class _DrivePageState extends State<DrivePage> {
         setState(() => _closedMs = ms);
         if (ms > _longestClosedMs) _longestClosedMs = ms;
       },
-      onDialerDigit: (d, _) =>
-          setState(() => _digitsTyped = _digitsTyped + d),
+      onDialerDigit: (d, _) {
+        setState(() {
+          _digitsTyped = _digitsTyped + d;
+          _pressedDigit = d;
+        });
+        // Flash for 250ms then clear so the key returns to neutral.
+        _pressedDigitTimer?.cancel();
+        _pressedDigitTimer = Timer(const Duration(milliseconds: 250), () {
+          if (mounted) setState(() => _pressedDigit = null);
+        });
+      },
       onCountdown: (s) => setState(() => _countdown = s),
       onCallingStarted: () => setState(() => _callingActive = true),
     );
@@ -433,6 +445,7 @@ class _DrivePageState extends State<DrivePage> {
             EmergencyDialer(
               digitsTyped: _digitsTyped,
               number: _settings.emergencyNumber,
+              pressedDigit: _pressedDigit,
               callingActive: _callingActive,
               callConnected: _callConnected,
               onCancel: _dismiss,

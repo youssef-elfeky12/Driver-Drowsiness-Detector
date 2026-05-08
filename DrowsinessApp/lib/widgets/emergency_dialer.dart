@@ -4,6 +4,10 @@ import '../theme.dart';
 class EmergencyDialer extends StatelessWidget {
   final String digitsTyped;
   final String number;
+  // The single digit currently being "pressed" — null when no key is held.
+  // Drives the brief flash on the keypad. Cleared 250 ms after each press by
+  // the parent (DrivePage).
+  final String? pressedDigit;
   final bool callingActive;
   final bool callConnected;
   final VoidCallback onCancel;
@@ -11,6 +15,7 @@ class EmergencyDialer extends StatelessWidget {
     super.key,
     required this.digitsTyped,
     required this.number,
+    required this.pressedDigit,
     required this.callingActive,
     required this.callConnected,
     required this.onCancel,
@@ -141,27 +146,32 @@ class EmergencyDialer extends StatelessWidget {
         childAspectRatio: 2.1,
         physics: const NeverScrollableScrollPhysics(),
         children: keys.map((k) {
-          final lit = digitsTyped.contains(k) && number.contains(k);
-          return Container(
+          // Only the digit currently being pressed lights up — like a real
+          // phone keypad. The blue fades back to neutral 250 ms later when the
+          // parent clears `pressedDigit`.
+          final lit = pressedDigit == k;
+          return AnimatedContainer(
+            duration: const Duration(milliseconds: 120),
             decoration: BoxDecoration(
               color: lit
-                  ? AppColors.primary.withOpacity(0.3)
+                  ? AppColors.primary.withOpacity(0.32)
                   : const Color(0xFF1A1A1A),
               borderRadius: BorderRadius.circular(10),
               border: Border.all(
                 color: lit
-                    ? AppColors.primary.withOpacity(0.6)
+                    ? AppColors.primary.withOpacity(0.65)
                     : Colors.transparent,
               ),
             ),
             alignment: Alignment.center,
-            child: Text(
-              k,
+            child: AnimatedDefaultTextStyle(
+              duration: const Duration(milliseconds: 120),
               style: TextStyle(
                 fontSize: 18,
                 fontWeight: FontWeight.w700,
                 color: lit ? AppColors.primary : AppColors.muted,
               ),
+              child: Text(k),
             ),
           );
         }).toList(),

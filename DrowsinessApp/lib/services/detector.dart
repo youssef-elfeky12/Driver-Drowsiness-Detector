@@ -16,14 +16,9 @@ import '../models/types.dart';
 /// 0=yawn, 1=no_yawn, 2=Closed, 3=Open, 4=front, 5=down
 class Detector {
   static const int imgSize = 224;
-  static const _faceIndices = [0, 1, 4, 5];
+  static const _yawnIndices = [0, 1]; // yawn vs no_yawn (binary)
+  static const _headIndices = [4, 5]; // front vs down (binary)
   static const _eyeIndices = [2, 3];
-  static const _faceLabels = [
-    FaceClass.yawn,
-    FaceClass.noYawn,
-    FaceClass.front,
-    FaceClass.down,
-  ];
 
   Interpreter? _interp;
   cv.CascadeClassifier? _faceCascade;
@@ -109,13 +104,31 @@ class Detector {
       for (final r in faces) {
         final fb = FaceBox(r.x, r.y, r.width, r.height);
         final probs = _classify(mat, fb);
-        final faceProbs = _renormalized(probs, _faceIndices);
-        var bestI = 0;
-        for (var i = 1; i < faceProbs.length; i++) {
-          if (faceProbs[i] > faceProbs[bestI]) bestI = i;
+
+        // Two independent binaries instead of a single 4-way argmax.
+        // The 4-way argmax was hiding yawn signals because front-pose
+        // probability dominates the softmax most of the time.
+        final yawnP = _renormalized(probs, _yawnIndices);   // [yawn, no_yawn]
+        final headP = _renormalized(probs, _headIndices);   // [front, down]
+        final isYawn = yawnP[0] > yawnP[1];
+        final yawnConf = isYawn ? yawnP[0] : yawnP[1];
+        final isHeadDown = headP[1] > headP[0];
+        final headConf = isHeadDown ? headP[1] : headP[0];
+
+        // Pick a single display label: surface the most "alarming" signal.
+        FaceClass faceClass;
+        double faceConf;
+        if (isYawn) {
+          faceClass = FaceClass.yawn;
+          faceConf = yawnConf;
+        } else if (isHeadDown) {
+          faceClass = FaceClass.down;
+          faceConf = headConf;
+        } else {
+          // both neutral — surface whichever binary is more confident
+          faceClass = yawnConf >= headConf ? FaceClass.noYawn : FaceClass.front;
+          faceConf = (yawnConf + headConf) / 2;
         }
-        final faceClass = _faceLabels[bestI];
-        final faceConf = faceProbs[bestI];
 
         // Eyes inside face ROI (upper 60%)
         final eyeRoi = mat.region(cv.Rect(r.x, r.y, r.width, r.height));
@@ -143,7 +156,16 @@ class Detector {
           ));
         }
 
-        out.add(FacePrediction(fb, faceClass, faceConf, eyePreds));
+        out.add(FacePrediction(
+          fb,
+          faceClass,
+          faceConf,
+          eyePreds,
+          isYawn: isYawn,
+          yawnConf: yawnConf,
+          isHeadDown: isHeadDown,
+          headPoseConf: headConf,
+        ));
       }
 
       return DetectionResult(
@@ -200,21 +222,23 @@ class Detector {
   }
 
   /// Run model on a 224x224 BGR crop, return raw 6-class softmax outputs.
+  ///
+  /// IMPORTANT: training (notebook) used `cv2.imread` which returns BGR and
+  /// never converted to RGB before fitting. The model therefore expects BGR
+  /// uint8 inputs — do NOT cvtColor here.
   Float32List _classify(cv.Mat src, FaceBox box) {
     final roi = src.region(cv.Rect(box.x, box.y, box.w, box.h));
     final resized = cv.resize(roi, (imgSize, imgSize));
-    final rgb = cv.cvtColor(resized, cv.COLOR_BGR2RGB);
     roi.dispose();
-    resized.dispose();
 
     // Build a [1,224,224,3] float32 tensor with raw uint8 values
     // (EfficientNetB0 has internal preprocessing).
     final input = Float32List(1 * imgSize * imgSize * 3);
-    final raw = rgb.data; // Uint8List of HxWx3
+    final raw = resized.data; // Uint8List of HxWx3 in BGR order
     for (var i = 0; i < raw.length; i++) {
       input[i] = raw[i].toDouble();
     }
-    rgb.dispose();
+    resized.dispose();
 
     final output = List.filled(6, 0.0).reshape([1, 6]);
     _interp!.run(input.reshape([1, imgSize, imgSize, 3]), output);

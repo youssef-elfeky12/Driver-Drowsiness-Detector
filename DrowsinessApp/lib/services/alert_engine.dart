@@ -22,7 +22,7 @@ class AlertEngine {
   static const _warningAtMs = 5000;
   static const _criticalAtMs = 10000;
   static const _emergencyAtMs = 15000;
-  static const _eyeOpenResetMs = 500;
+  static const _eyeOpenResetMs = 1000;
 
   final AudioEngine audio;
   double confidenceThreshold;
@@ -115,10 +115,14 @@ class AlertEngine {
 
     final face = result.faces.first;
 
-    // ---- Track A ----
-    final passes = face.conf >= confidenceThreshold;
+    // ---- Track A — yawn and head-down are INDEPENDENT signals.
+    // Use the per-signal binary confidence, not the combined `face.conf`,
+    // so a yawning forward-facing user still registers as yawn.
+    final yawnPasses = face.isYawn && face.yawnConf >= confidenceThreshold;
+    final headDownPasses =
+        face.isHeadDown && face.headPoseConf >= confidenceThreshold;
 
-    if (passes && face.faceClass == FaceClass.yawn) {
+    if (yawnPasses) {
       if (_yawnSustainStart == 0) _yawnSustainStart = now;
       if (now - _yawnSustainStart >= _sustainMs &&
           now - _lastYawnEventAt >= _cooldownMs) {
@@ -129,7 +133,7 @@ class AlertEngine {
       _yawnSustainStart = 0;
     }
 
-    if (passes && face.faceClass == FaceClass.down) {
+    if (headDownPasses) {
       if (_headDownSustainStart == 0) _headDownSustainStart = now;
       if (now - _headDownSustainStart >= _sustainMs &&
           now - _lastHeadDownEventAt >= _cooldownMs) {

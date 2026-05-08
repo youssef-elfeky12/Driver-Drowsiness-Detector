@@ -36,16 +36,26 @@ class _Painter extends CustomPainter {
     final sy = size.height / result.frameHeight;
 
     for (final f in result.faces) {
-      _drawBox(
+      // Two stacked labels above the face box: yawn binary, then head pose.
+      // Each tag colored amber when its alarm-side is firing, green otherwise.
+      final yawnLabel = f.isYawn ? 'yawn' : 'no_yawn';
+      final yawnColor = f.isYawn ? AppColors.amber : AppColors.ok;
+      final headLabel = f.isHeadDown ? 'down' : 'front';
+      final headColor = f.isHeadDown ? AppColors.amber : AppColors.ok;
+
+      _drawFaceBoxWithStackedTags(
         canvas,
         f.box,
         sx,
         sy,
         size,
         AppColors.ok,
-        'face: ${f.faceClass.label}  ${(f.conf * 100).toInt()}%',
-        thick: 3,
+        topLabel: '$yawnLabel ${(f.yawnConf * 100).toInt()}%',
+        topColor: yawnColor,
+        bottomLabel: '$headLabel ${(f.headPoseConf * 100).toInt()}%',
+        bottomColor: headColor,
       );
+
       for (final e in f.eyes) {
         final c = e.eyeClass == EyeClass.closed
             ? AppColors.danger
@@ -61,6 +71,80 @@ class _Painter extends CustomPainter {
           thick: 2,
         );
       }
+    }
+  }
+
+  void _drawFaceBoxWithStackedTags(
+    Canvas canvas,
+    FaceBox b,
+    double sx,
+    double sy,
+    Size size,
+    Color boxColor, {
+    required String topLabel,
+    required Color topColor,
+    required String bottomLabel,
+    required Color bottomColor,
+  }) {
+    var left = b.x * sx;
+    final top = b.y * sy;
+    final w = b.w * sx;
+    final h = b.h * sy;
+    if (mirrored) left = size.width - left - w;
+
+    // Box outline.
+    canvas.drawRect(
+      Rect.fromLTWH(left, top, w, h),
+      Paint()
+        ..color = boxColor
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 3,
+    );
+
+    // Tags above the box, stacked: top tag = yawn binary, second = head pose.
+    final tags = [
+      (topLabel, topColor),
+      (bottomLabel, bottomColor),
+    ];
+    final painters = tags
+        .map((t) => TextPainter(
+              text: TextSpan(
+                text: ' ${t.$1} ',
+                style: const TextStyle(
+                  color: AppColors.bg,
+                  fontWeight: FontWeight.w700,
+                  fontSize: 12,
+                ),
+              ),
+              textDirection: TextDirection.ltr,
+            )..layout())
+        .toList();
+
+    final lineHeight = painters[0].height + 2;
+    final stackHeight = lineHeight * tags.length + 2;
+    var tagTop = (top - stackHeight).clamp(0.0, size.height - stackHeight);
+
+    for (var i = 0; i < tags.length; i++) {
+      final tp = painters[i];
+      final color = tags[i].$2;
+      final tagRect = Rect.fromLTWH(
+        left,
+        tagTop,
+        tp.width + 6,
+        tp.height + 2,
+      );
+      canvas.drawRect(tagRect, Paint()..color = color);
+
+      // Counter-flip text against the parent's mirror Transform.
+      final cx = tagRect.center.dx;
+      canvas.save();
+      canvas.translate(cx, 0);
+      canvas.scale(-1.0, 1.0);
+      canvas.translate(-cx, 0);
+      tp.paint(canvas, tagRect.topLeft + const Offset(3, 1));
+      canvas.restore();
+
+      tagTop += lineHeight;
     }
   }
 
