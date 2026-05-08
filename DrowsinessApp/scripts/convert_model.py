@@ -11,6 +11,7 @@ from pathlib import Path
 import sys
 
 import tensorflow as tf
+from tensorflow import keras
 
 HERE = Path(__file__).resolve().parent
 APP_ROOT = HERE.parent
@@ -25,7 +26,7 @@ def main() -> None:
         sys.exit(f"Model not found: {H5_PATH}")
 
     print(f"Loading {H5_PATH} ...")
-    model = tf.keras.models.load_model(str(H5_PATH), compile=False)
+    model = keras.models.load_model(str(H5_PATH), compile=False)
 
     converter = tf.lite.TFLiteConverter.from_keras_model(model)
     converter.optimizations = [tf.lite.Optimize.DEFAULT]
