@@ -1,0 +1,13 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(flutter --version)",
+      "Bash(cd \"C:/Users/youss/Important/Projects/Bachelor Thesis/Driver-Drowsiness-Detector\" && cp SoundEffects/*.mp3 SoundEffects/*.m4a DrowsinessApp/public/sounds/ && ls DrowsinessApp/public/sounds/)",
+      "Bash(curl -sL https://raw.githubusercontent.com/opencv/opencv/4.x/data/haarcascades/haarcascade_frontalface_default.xml -o \"C:/Users/youss/Important/Projects/Bachelor Thesis/Driver-Drowsiness-Detector/DrowsinessApp/public/haarcascades/haarcascade_frontalface_default.xml\")",
+      "Bash(curl -sL https://raw.githubusercontent.com/opencv/opencv/4.x/data/haarcascades/haarcascade_eye.xml -o \"C:/Users/youss/Important/Projects/Bachelor Thesis/Driver-Drowsiness-Detector/DrowsinessApp/public/haarcascades/haarcascade_eye.xml\")"
+    ],
+    "additionalDirectories": [
+      "C:\\Users\\youss\\Important\\Projects\\Bachelor Thesis\\Driver-Drowsiness-Detector\\SoundEffects"
+    ]
+  }
+}
