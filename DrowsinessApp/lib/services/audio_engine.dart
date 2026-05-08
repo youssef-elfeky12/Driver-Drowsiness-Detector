@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'package:audioplayers/audioplayers.dart';
+import 'package:flutter_tts/flutter_tts.dart';
 
 /// Multi-track engine. See DESIGN.md §4 for behavior.
 ///
@@ -15,6 +16,21 @@ class AudioEngine {
   final AudioPlayer _siren = AudioPlayer();
   final AudioPlayer _dialer = AudioPlayer();
   final AudioPlayer _calling = AudioPlayer();
+  // Dispatcher pickup ("911, what's your emergency?") — plays once after the
+  // ringback ends. Siren stays ducked until the whole dispatcher chain finishes.
+  final AudioPlayer _accept = AudioPlayer();
+  StreamSubscription<void>? _acceptSub;
+
+  // Pre-recorded fixed prefix: "A driver has become unresponsive. Please send
+  // help to ...". Generated externally (TTSforge) and shipped as an asset so we
+  // don't pay live-TTS latency for this every emergency.
+  final AudioPlayer _intro = AudioPlayer();
+  StreamSubscription<void>? _introSub;
+
+  // Live TTS for the variable location tail (Windows uses native SAPI).
+  final FlutterTts _tts = FlutterTts();
+  String? _emergencyLocationText;
+  bool _ttsConfigured = false;
 
   static const dialDigitOffsetsMs = <int>[71, 437, 701];
 
@@ -33,19 +49,107 @@ class AudioEngine {
         await _calling.play(AssetSource('sounds/calling.mp3'),
             volume: _master);
       } else {
-        // After ringback ends, restore siren to full volume.
-        await _rampVolume(_siren, _master, 200);
+        // Ringback finished → play the dispatcher pickup (911 accept).
+        // Siren stays ducked across the full dispatcher chain.
+        await _accept.play(AssetSource('sounds/911accept.mp3'),
+            volume: _master);
       }
     });
+
+    // After the dispatcher's "911 what's your emergency" → play the cached
+    // prefix ("A driver has become unresponsive. Please send help to").
+    _acceptSub = _accept.onPlayerComplete.listen((_) async {
+      await _intro.play(AssetSource('sounds/dispatch_intro.mp3'),
+          volume: _master);
+    });
+
+    // After the cached prefix → speak the location tail live, then ramp the
+    // siren back up once TTS is done.
+    _introSub = _intro.onPlayerComplete.listen((_) async {
+      await _speakLocation();
+      await _rampVolume(_siren, _master, 200);
+    });
+
+    await _configureTts();
+  }
+
+  Future<void> _configureTts() async {
+    if (_ttsConfigured) return;
+    try {
+      await _tts.setLanguage('en-US');
+      await _tts.setSpeechRate(0.45); // slower & clearer
+      await _tts.setPitch(1.0);
+      await _tts.setVolume(1.0);
+      // Try to pick a US female voice. Voice catalogue varies per platform —
+      // we look for one that contains "female" or the typical Windows SAPI
+      // names ("Zira" / "Aria"). If none match, we accept the default.
+      final voices = await _tts.getVoices;
+      if (voices is List) {
+        for (final v in voices) {
+          if (v is Map) {
+            final name = (v['name'] ?? '').toString().toLowerCase();
+            final locale = (v['locale'] ?? '').toString().toLowerCase();
+            final isUs = locale.startsWith('en-us') || locale.startsWith('en_us');
+            final isFemale = name.contains('female') ||
+                name.contains('zira') ||
+                name.contains('aria') ||
+                name.contains('jenny');
+            if (isUs && isFemale) {
+              await _tts.setVoice({
+                'name': v['name'].toString(),
+                'locale': v['locale'].toString(),
+              });
+              break;
+            }
+          }
+        }
+      }
+      _ttsConfigured = true;
+    } catch (_) {
+      // best-effort; default voice is fine if any setter fails
+    }
+  }
+
+  /// Set by the alert engine (or DrivePage) before the emergency flow starts.
+  /// If null when the chain reaches TTS, we speak a generic fallback.
+  void setEmergencyLocationText(String? text) {
+    _emergencyLocationText = text;
+  }
+
+  Future<void> _speakLocation() async {
+    final text = _emergencyLocationText ?? 'an unknown location';
+    final completer = Completer<void>();
+    _tts.setCompletionHandler(() {
+      if (!completer.isCompleted) completer.complete();
+    });
+    _tts.setErrorHandler((_) {
+      if (!completer.isCompleted) completer.complete();
+    });
+    try {
+      await _tts.awaitSpeakCompletion(true);
+      await _tts.speak(text);
+      // awaitSpeakCompletion above should already block until done, but the
+      // completion handler is a safety net in case the platform deviates.
+      if (!completer.isCompleted) completer.complete();
+    } catch (_) {
+      if (!completer.isCompleted) completer.complete();
+    }
+    return completer.future.timeout(const Duration(seconds: 12),
+        onTimeout: () {});
   }
 
   Future<void> dispose() async {
     await _callingSub?.cancel();
+    await _acceptSub?.cancel();
+    await _introSub?.cancel();
+    await _tts.stop();
     await _buzz.dispose();
     await _pullover.dispose();
     await _siren.dispose();
     await _dialer.dispose();
     await _calling.dispose();
+    await _accept.dispose();
+    await _intro.dispose();
   }
 
   void setMasterVolume(double v) {
@@ -112,6 +216,9 @@ class AudioEngine {
       stopSiren(),
       stopCalling(),
       _dialer.stop(),
+      _accept.stop(),
+      _intro.stop(),
+      _tts.stop(),
     ]);
   }
 
