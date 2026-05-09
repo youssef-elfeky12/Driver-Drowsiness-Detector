@@ -1,6 +1,9 @@
 import 'dart:async';
+import 'dart:io';
 import 'package:audioplayers/audioplayers.dart';
 import 'package:flutter_tts/flutter_tts.dart';
+
+import 'windows_tts.dart';
 
 /// Multi-track engine. See DESIGN.md §4 for behavior.
 ///
@@ -116,8 +119,35 @@ class AudioEngine {
     _emergencyLocationText = text;
   }
 
+  // Dedicated player for the boosted-gain TTS WAV on Windows.
+  final AudioPlayer _ttsPlayer = AudioPlayer();
+
   Future<void> _speakLocation() async {
     final text = _emergencyLocationText ?? 'an unknown location';
+
+    // On Windows, render TTS to a WAV via SAPI then amplify so the dispatcher
+    // location matches the volume of the pre-recorded prefix. flutter_tts
+    // can't boost above 1.0 on its own.
+    if (Platform.isWindows) {
+      final path = await WindowsTts.synthesize(text: text, gainDb: 8.0);
+      if (path != null) {
+        final completer = Completer<void>();
+        late StreamSubscription<void> sub;
+        sub = _ttsPlayer.onPlayerComplete.listen((_) {
+          sub.cancel();
+          if (!completer.isCompleted) completer.complete();
+        });
+        try {
+          await _ttsPlayer.play(DeviceFileSource(path), volume: _master);
+        } catch (_) {
+          if (!completer.isCompleted) completer.complete();
+        }
+        return completer.future.timeout(const Duration(seconds: 15),
+            onTimeout: () {});
+      }
+      // PowerShell synth failed → fall through to flutter_tts.
+    }
+
     final completer = Completer<void>();
     _tts.setCompletionHandler(() {
       if (!completer.isCompleted) completer.complete();
@@ -128,8 +158,6 @@ class AudioEngine {
     try {
       await _tts.awaitSpeakCompletion(true);
       await _tts.speak(text);
-      // awaitSpeakCompletion above should already block until done, but the
-      // completion handler is a safety net in case the platform deviates.
       if (!completer.isCompleted) completer.complete();
     } catch (_) {
       if (!completer.isCompleted) completer.complete();
@@ -150,6 +178,7 @@ class AudioEngine {
     await _calling.dispose();
     await _accept.dispose();
     await _intro.dispose();
+    await _ttsPlayer.dispose();
   }
 
   void setMasterVolume(double v) {
