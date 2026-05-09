@@ -14,6 +14,7 @@ import '../services/alert_engine.dart';
 import '../services/audio_engine.dart';
 import '../services/desktop_camera.dart';
 import '../services/detector.dart';
+import '../services/location_service.dart';
 import '../services/settings.dart';
 import '../services/storage.dart';
 import '../theme.dart';
@@ -118,6 +119,7 @@ class _DrivePageState extends State<DrivePage> {
     _uiTicker?.cancel();
     _connectedTimer?.cancel();
     _pressedDigitTimer?.cancel();
+    _locationTimer?.cancel();
     _desktopFrameTimer?.cancel();
     _desktopCam.close();
     _desktopFrame?.dispose();
@@ -175,6 +177,12 @@ class _DrivePageState extends State<DrivePage> {
     });
 
     if (_settings.keepScreenOn) await WakelockPlus.enable();
+
+    // Resolve location in the background so the dispatcher TTS has an address
+    // ready by the time the emergency flow fires (~15 s in). We don't block
+    // the start — emergency falls back to coords/"unknown" if this isn't done
+    // by then. Re-resolves silently every 30 s.
+    _refreshLocationLoop();
 
     _uiTicker = Timer.periodic(const Duration(milliseconds: 500), (_) {
       if (mounted) setState(() {});
@@ -240,6 +248,22 @@ class _DrivePageState extends State<DrivePage> {
   // inference is plenty.
   static const _inferenceIntervalMs = 250;
   int _lastInferenceMs = 0;
+
+  Timer? _locationTimer;
+  Future<void> _refreshLocationLoop() async {
+    Future<void> doFetch() async {
+      try {
+        final fix = await LocationService.getFix();
+        if (fix != null) {
+          _audio.setEmergencyLocationText(fix.toSpeech());
+        }
+      } catch (_) {/* ignore */}
+    }
+    await doFetch();
+    _locationTimer?.cancel();
+    _locationTimer = Timer.periodic(
+        const Duration(seconds: 30), (_) => doFetch());
+  }
 
   Future<void> _onDesktopTick() async {
     if (_paused) return;

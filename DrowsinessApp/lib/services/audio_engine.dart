@@ -180,7 +180,9 @@ class AudioEngine {
   }
 
   Future<void> stopSiren() => _siren.stop();
-  Future<void> duckSiren() => _rampVolume(_siren, _master * 0.25, 200);
+  // Aggressive duck during the dispatcher chain so the operator + TTS are
+  // clearly audible over the alarm.
+  Future<void> duckSiren() => _rampVolume(_siren, _master * 0.10, 200);
   Future<void> unduckSiren() => _rampVolume(_siren, _master, 200);
 
   /// Plays the dialer one-shot. Returns the digit-offset timeline (ms) so the UI

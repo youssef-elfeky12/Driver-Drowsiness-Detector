@@ -83,17 +83,38 @@ class LocationService {
       if (addr == null) {
         return body['display_name']?.toString();
       }
-      // Build a short, speakable address: "street number, city".
+      // Build a maximally informative speakable address. Nominatim's data is
+      // sparser outside dense western cities, so we layer multiple fallbacks
+      // from the most specific to the most general.
       final parts = <String>[];
-      final road = addr['road'] ?? addr['pedestrian'] ?? addr['footway'];
+      final road = addr['road'] ??
+          addr['pedestrian'] ??
+          addr['footway'] ??
+          addr['path'];
       final house = addr['house_number'];
       if (road != null) {
-        parts.add(house != null ? '$house $road' : '$road');
+        parts.add(house != null ? '$house $road' : road.toString());
       }
-      final city = addr['city'] ?? addr['town'] ?? addr['village'] ?? addr['suburb'];
+      final neighbourhood = addr['neighbourhood'] ??
+          addr['quarter'] ??
+          addr['hamlet'] ??
+          addr['suburb'];
+      if (neighbourhood != null) parts.add(neighbourhood.toString());
+      final district = addr['city_district'] ??
+          addr['district'] ??
+          addr['borough'] ??
+          addr['county'];
+      if (district != null) parts.add(district.toString());
+      final city = addr['city'] ?? addr['town'] ?? addr['village'];
       if (city != null) parts.add(city.toString());
-      if (parts.isEmpty) return body['display_name']?.toString();
-      return parts.join(', ');
+      final state = addr['state'] ?? addr['region'];
+      if (state != null) parts.add(state.toString());
+
+      if (parts.isEmpty) {
+        return body['display_name']?.toString();
+      }
+      // Keep it under ~6 components so the TTS doesn't read forever.
+      return parts.take(5).join(', ');
     } catch (_) {
       return null;
     }
