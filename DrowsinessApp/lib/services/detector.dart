@@ -37,7 +37,8 @@ class Detector {
   cv.FaceDetectorYN? _faceDetector;
   (int, int)? _yunetInputSize;
 
-  bool get isReady => _interp != null && _faceDetector != null;
+  bool get isReady => _faceDetector != null;
+  bool get canClassify => _interp != null;
 
   /// Asset-bundle init. Only safe on the root isolate (rootBundle requires
   /// the platform-channel binary messenger). Extracts the two model files
@@ -59,14 +60,23 @@ class Detector {
 
   /// Isolate-safe init. Both files must already exist on disk (the caller
   /// is responsible for extracting them from assets on the root isolate).
+  ///
+  /// Pass [enableClassification] = false on a detection-only worker — it
+  /// avoids loading the ~92 MB TFLite model on isolates that will only
+  /// ever call [detectFacesOnly].
   void initFromPaths({
-    required String tflitePath,
     required String yunetPath,
+    String? tflitePath,
+    bool enableClassification = true,
     void Function(String)? onProgress,
   }) {
-    onProgress?.call('Loading model…');
-    _interp = Interpreter.fromFile(File(tflitePath));
-    _interp!.allocateTensors();
+    if (enableClassification) {
+      assert(tflitePath != null,
+          'tflitePath is required when enableClassification is true');
+      onProgress?.call('Loading model…');
+      _interp = Interpreter.fromFile(File(tflitePath!));
+      _interp!.allocateTensors();
+    }
 
     onProgress?.call('Loading face detector…');
     // Input size is reset per-frame via setInputSize; the (320,320) here is
@@ -119,10 +129,65 @@ class Detector {
     }
   }
 
+  /// YuNet-only detection. Returns boxes + neutral class labels; runs no
+  /// classifier passes. Cheap (~10–15 ms on a typical CPU) and intended
+  /// to be called every frame so the on-screen bounding box can track the
+  /// face fluidly while the slower [detectMat] catches up at a fixed rate.
+  DetectionResult detectFacesOnly(cv.Mat mat) {
+    if (!isReady) {
+      return DetectionResult(
+        faces: const [],
+        frameWidth: mat.cols,
+        frameHeight: mat.rows,
+        tsMs: DateTime.now().millisecondsSinceEpoch,
+      );
+    }
+    try {
+      final faces = _detectFacesYuNet(mat);
+      final out = <FacePrediction>[];
+      for (final f in faces) {
+        final r = f.rect;
+        final fb = FaceBox(r.x, r.y, r.width, r.height);
+        final eyeBoxes = <EyePrediction>[];
+        for (final pt in [f.rightEye, f.leftEye]) {
+          final eb = _eyeBoxFromLandmark(pt, r, mat.cols, mat.rows);
+          if (eb != null) {
+            // Neutral eye state — overlay will keep showing the last
+            // classified state via the merge in drive_page.
+            eyeBoxes.add(EyePrediction(eb, EyeClass.open, 0));
+          }
+        }
+        out.add(FacePrediction(
+          fb,
+          FaceClass.front,
+          0,
+          eyeBoxes,
+          isYawn: false,
+          yawnConf: 0,
+          isHeadDown: false,
+          headPoseConf: 0,
+        ));
+      }
+      return DetectionResult(
+        faces: out,
+        frameWidth: mat.cols,
+        frameHeight: mat.rows,
+        tsMs: DateTime.now().millisecondsSinceEpoch,
+      );
+    } catch (_) {
+      return DetectionResult(
+        faces: const [],
+        frameWidth: mat.cols,
+        frameHeight: mat.rows,
+        tsMs: DateTime.now().millisecondsSinceEpoch,
+      );
+    }
+  }
+
   /// Run detection on an already-decoded BGR cv.Mat (desktop path).
   /// Caller owns the Mat lifecycle.
   DetectionResult detectMat(cv.Mat mat, double confThreshold) {
-    if (!isReady) {
+    if (!isReady || !canClassify) {
       return DetectionResult(
         faces: const [],
         frameWidth: mat.cols,

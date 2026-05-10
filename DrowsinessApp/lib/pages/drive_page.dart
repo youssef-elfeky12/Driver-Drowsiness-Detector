@@ -51,7 +51,11 @@ class _DrivePageState extends State<DrivePage> {
   bool _ready = false;
   bool _running = false;
   bool _paused = false;
-  bool _busy = false;
+  // Two independent in-flight flags — the cheap detect path and the heavy
+  // classify path each have their own worker isolate, so neither blocks
+  // the other and they each drop their own frames on busy.
+  bool _detectBusy = false;
+  bool _classifyBusy = false;
 
   AlertLevel _level = AlertLevel.none;
   int _closedMs = 0;
@@ -230,9 +234,9 @@ class _DrivePageState extends State<DrivePage> {
   }
 
   Future<void> _onFrame(CameraImage image) async {
-    if (_busy || _paused || _engine == null) return;
+    if (_paused || _engine == null) return;
     // Convert on main isolate (CameraImage isn't sendable), then ship raw
-    // BGR bytes to the worker.
+    // BGR bytes to the worker isolates.
     final mat = Detector.matFromCameraImage(image);
     if (mat == null) return;
     final Uint8List bytes;
@@ -244,29 +248,28 @@ class _DrivePageState extends State<DrivePage> {
     } finally {
       mat.dispose();
     }
-    _busy = true;
-    try {
-      final result = await _worker.infer(
-        bgrBytes: bytes,
-        width: w,
-        height: h,
-        threshold: _settings.confidenceThreshold,
-      );
-      if (result == null || !mounted || _engine == null) return;
-      _lastResult = result;
-      await _engine!.ingest(result);
-      if (mounted) setState(() {});
-    } catch (_) {
-      // swallow per-frame errors
-    } finally {
-      _busy = false;
+    _dispatch(bytes, w, h);
+  }
+
+  /// Common dispatch path shared by the mobile [CameraImage] callback and
+  /// the desktop frame timer. Fires a detection request every tick (cheap,
+  /// drives the live box) and a classification request at the throttled
+  /// rate (heavy, drives labels + alert engine).
+  void _dispatch(Uint8List bytes, int w, int h) {
+    if (!_detectBusy) {
+      _detectBusy = true;
+      // ignore: unawaited_futures
+      _runDetect(bytes, w, h);
+    }
+    final now = DateTime.now().millisecondsSinceEpoch;
+    if (!_classifyBusy && now - _lastInferenceMs >= _inferenceIntervalMs) {
+      _classifyBusy = true;
+      // ignore: unawaited_futures
+      _runClassify(bytes, w, h);
     }
   }
 
-  // Decouple display (~10 fps) from inference (~4 fps) — when a face is
-  // detected, full Haar+TFLite work is ~150-300ms which would freeze the UI
-  // every tick. Drowsiness thresholds are ≥1.5s of sustained signal so 4 fps
-  // inference is plenty.
+  // Classification cadence. The detect path runs every tick regardless.
   static const _inferenceIntervalMs = 250;
   int _lastInferenceMs = 0;
 
@@ -286,16 +289,32 @@ class _DrivePageState extends State<DrivePage> {
         const Duration(seconds: 30), (_) => doFetch());
   }
 
-  Future<void> _runWorkerInfer(Uint8List bytes, int w, int h) async {
+  Future<void> _runDetect(Uint8List bytes, int w, int h) async {
     try {
-      final result = await _worker.infer(
+      final detResult = await _worker.detect(
+        bgrBytes: bytes,
+        width: w,
+        height: h,
+      );
+      if (!mounted || detResult == null) return;
+      _lastResult = _mergeDetectIntoLast(detResult);
+      if (mounted) setState(() {});
+    } catch (_) {
+      // swallow per-frame errors
+    } finally {
+      _detectBusy = false;
+    }
+  }
+
+  Future<void> _runClassify(Uint8List bytes, int w, int h) async {
+    try {
+      final result = await _worker.classify(
         bgrBytes: bytes,
         width: w,
         height: h,
         threshold: _settings.confidenceThreshold,
       );
-      if (!mounted || _engine == null) return;
-      if (result == null) return;
+      if (!mounted || _engine == null || result == null) return;
       _lastResult = result;
       await _engine!.ingest(result);
       _lastInferenceMs = DateTime.now().millisecondsSinceEpoch;
@@ -303,8 +322,43 @@ class _DrivePageState extends State<DrivePage> {
     } catch (_) {
       // swallow per-frame errors
     } finally {
-      _busy = false;
+      _classifyBusy = false;
     }
+  }
+
+  /// Merge fresh box positions from a detect-only reply onto the
+  /// last-known classification labels. If the face count changed (face
+  /// entered/left frame), fall back to the detect result as-is — labels
+  /// will be neutral until the next classify reply lands ~250 ms later.
+  DetectionResult _mergeDetectIntoLast(DetectionResult det) {
+    final prev = _lastResult;
+    if (prev == null || prev.faces.length != det.faces.length) {
+      return det;
+    }
+    final merged = <FacePrediction>[];
+    for (var i = 0; i < det.faces.length; i++) {
+      final freshBox = det.faces[i].box;
+      final freshEyes = det.faces[i].eyes;
+      final prevFace = prev.faces[i];
+      // Update eye box positions from detect, keep eye class+conf from
+      // the last classify reply when count matches.
+      final mergedEyes = <EyePrediction>[];
+      for (var j = 0; j < freshEyes.length; j++) {
+        if (j < prevFace.eyes.length) {
+          mergedEyes.add(prevFace.eyes[j].copyWith(box: freshEyes[j].box));
+        } else {
+          mergedEyes.add(freshEyes[j]);
+        }
+      }
+      merged.add(prevFace.copyWith(box: freshBox, eyes: mergedEyes));
+    }
+    return DetectionResult(
+      faces: merged,
+      frameWidth: det.frameWidth,
+      frameHeight: det.frameHeight,
+      tsMs: det.tsMs,
+      aligned: prev.aligned,
+    );
   }
 
   Future<void> _onDesktopTick() async {
@@ -320,25 +374,15 @@ class _DrivePageState extends State<DrivePage> {
       _desktopFrame = img;
       old?.dispose();
 
-      // 2) Run detection only when the inference interval has elapsed AND a
-      //    previous inference isn't still running (`_busy`). The heavy work
-      //    runs on a worker isolate, so the preview keeps painting smoothly
-      //    while inference is in flight — this throttle is just to avoid
-      //    queuing more work than we can chew.
-      final now = DateTime.now().millisecondsSinceEpoch;
-      if (!_busy &&
-          _engine != null &&
-          now - _lastInferenceMs >= _inferenceIntervalMs) {
-        // Snapshot BGR bytes before dispatching — the Mat itself can't
-        // cross the isolate boundary and will be disposed in `finally`.
+      // 2) Snapshot BGR bytes once and hand them to _dispatch, which
+      //    decides per-tick whether to fire a detect (every tick) and/or
+      //    a classify (throttled). The Mat itself can't cross an isolate
+      //    boundary and is disposed in `finally`.
+      if (_engine != null) {
         final bytes = Uint8List.fromList(frame.data);
         final fw = frame.cols;
         final fh = frame.rows;
-        _busy = true;
-        // Fire-and-forget; the await happens inside this microtask but the
-        // ticker function will return as soon as the worker reply lands.
-        // ignore: unawaited_futures
-        _runWorkerInfer(bytes, fw, fh);
+        _dispatch(bytes, fw, fh);
       }
 
       if (mounted) setState(() {});
