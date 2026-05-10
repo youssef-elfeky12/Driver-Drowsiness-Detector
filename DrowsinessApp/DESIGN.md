@@ -18,7 +18,12 @@ The app is portrait-locked and styled phone-first (mocked phone bezel on desktop
 
 **Inference:** EfficientNet-B0 trained in the existing notebook, converted from `Models/drowsiness_efficientnet_b0.h5` to a `.tflite` model via `scripts/convert_model.py`, loaded through `tflite_flutter`. Runs entirely on-device — no network calls during a drive.
 
-**Detection (face / eyes):** `opencv_dart` runs the same Haar cascades the existing Python pipeline uses (`haarcascade_frontalface_default.xml`, `haarcascade_eye.xml`) to find the face and eyes. The face crop and each eye crop are fed to the model.
+**Detection (face / eyes):** `opencv_dart` runs **YuNet** (`face_detection_yunet_2023mar.onnx`, ~230 KB) for both face localization and eye landmarking. YuNet replaces the two Haar cascades the pipeline used to rely on. Two failure modes pushed the switch:
+
+- `haarcascade_frontalface_default.xml` **drops the face when the head tilts down** — exactly the pose that signals drowsiness. Haar is trained on upright frontal faces and gives up once the visible feature layout drifts off-axis. YuNet is a small CNN trained on diverse poses and keeps producing a bounding box through the tilt, so the classifier still gets a crop and can make the front/down call itself instead of the detector silently swallowing it.
+- `haarcascade_eye.xml` **drops the eye when it closes** — and "is the eye closed" is the central question the app is trying to answer. The cascade was trained on open eyes; the dark iris/sclera contrast it keys on disappears at lid closure. YuNet returns 5 facial landmarks (including right- and left-eye points) as part of the same detection pass, and those points are inferred from face geometry, so the eye crops keep flowing whether the eye is open or closed.
+
+The face crop comes straight from YuNet's bbox. Each eye crop is a `face_w * 0.30` square centered on the corresponding eye landmark, clamped to the face rect. Both crops are fed to the model.
 
 **Camera:**
 - Mobile (iOS/Android): the official `camera` Flutter plugin.
@@ -141,8 +146,7 @@ DrowsinessApp/
   assets/
     sounds/              ← buzz, pullover, siren, dial tones, ringback,
                            911 accept, dispatch prefix
-    haarcascades/
-    models/              ← generated .tflite (gitignored)
+    models/              ← YuNet ONNX + generated .tflite (.tflite gitignored)
   lib/
     main.dart, theme.dart
     models/types.dart
