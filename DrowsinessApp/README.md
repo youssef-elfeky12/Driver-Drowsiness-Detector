@@ -16,7 +16,7 @@ See **[DESIGN.md](DESIGN.md)** for the full spec.
 ## One-time setup
 
 ### 1. Convert the model
-The app loads `assets/models/drowsiness_efficientnet_b0.tflite`. Build it once from the existing `.h5`:
+The app loads `assets/models/drowsiness_resnet50v2.tflite`. Build it once from the existing `.h5`:
 
 ```powershell
 cd DrowsinessApp
@@ -24,7 +24,7 @@ pip install "tensorflow==2.15.*"
 python scripts/convert_model.py
 ```
 
-This produces `assets/models/drowsiness_efficientnet_b0.tflite` (~16 MB).
+This produces `assets/models/drowsiness_resnet50v2.tflite`.
 
 ### 2. Bootstrap platform folders
 This repo ships only the Flutter source (`lib/`, `assets/`, `pubspec.yaml`). The platform-specific folders (`windows/`, `ios/`, `android/`) are created by Flutter:

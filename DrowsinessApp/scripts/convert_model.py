@@ -1,11 +1,11 @@
 """
-Convert drowsiness_efficientnet_b0.h5 -> drowsiness_efficientnet_b0.tflite
+Convert drowsiness_resnet50v2.h5 -> drowsiness_resnet50v2.tflite
 
 Run once:
     pip install "tensorflow==2.15.*"
     python scripts/convert_model.py
 
-Output: assets/models/drowsiness_efficientnet_b0.tflite
+Output: assets/models/drowsiness_resnet50v2.tflite
 """
 from pathlib import Path
 import sys
@@ -17,8 +17,8 @@ HERE = Path(__file__).resolve().parent
 APP_ROOT = HERE.parent
 PROJECT_ROOT = APP_ROOT.parent
 
-H5_PATH = PROJECT_ROOT / "Models" / "drowsiness_efficientnet_b0.h5"
-OUT_PATH = APP_ROOT / "assets" / "models" / "drowsiness_efficientnet_b0.tflite"
+H5_PATH = PROJECT_ROOT / "Models" / "drowsiness_resnet50v2.h5"
+OUT_PATH = APP_ROOT / "assets" / "models" / "drowsiness_resnet50v2.tflite"
 
 
 def main() -> None:
@@ -30,7 +30,6 @@ def main() -> None:
 
     converter = tf.lite.TFLiteConverter.from_keras_model(model)
     converter.optimizations = [tf.lite.Optimize.DEFAULT]
-    # Keep float32 inputs/outputs (EfficientNetB0's internal preprocess is float).
     converter.target_spec.supported_types = [tf.float32]
 
     print("Converting ...")

@@ -42,7 +42,7 @@ class Detector {
   Future<void> init({void Function(String)? onProgress}) async {
     onProgress?.call('Loading model…');
     _interp = await Interpreter.fromAsset(
-      'assets/models/drowsiness_efficientnet_b0.tflite',
+      'assets/models/drowsiness_resnet50v2.tflite',
     );
     _interp!.allocateTensors();
 
@@ -231,18 +231,21 @@ class Detector {
   ///
   /// IMPORTANT: training (notebook) used `cv2.imread` which returns BGR and
   /// never converted to RGB before fitting. The model therefore expects BGR
-  /// uint8 inputs — do NOT cvtColor here.
+  /// inputs — do NOT cvtColor here.
+  ///
+  /// ResNet50V2 has no internal normalization layer, so we apply
+  /// `preprocess_input` manually: scale [0, 255] uint8 to [-1, 1] float.
   Float32List _classify(cv.Mat src, FaceBox box) {
     final roi = src.region(cv.Rect(box.x, box.y, box.w, box.h));
     final resized = cv.resize(roi, (imgSize, imgSize));
     roi.dispose();
 
-    // Build a [1,224,224,3] float32 tensor with raw uint8 values
-    // (EfficientNetB0 has internal preprocessing).
+    // Build a [1,224,224,3] float32 tensor, applying ResNet50V2's
+    // preprocess_input (tf mode: x/127.5 - 1.0).
     final input = Float32List(1 * imgSize * imgSize * 3);
     final raw = resized.data; // Uint8List of HxWx3 in BGR order
     for (var i = 0; i < raw.length; i++) {
-      input[i] = raw[i].toDouble();
+      input[i] = raw[i] / 127.5 - 1.0;
     }
     resized.dispose();
 

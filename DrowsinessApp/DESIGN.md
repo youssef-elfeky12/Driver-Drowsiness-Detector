@@ -16,7 +16,7 @@ This document is the high-level specification. For per-class implementation deta
 
 The app is portrait-locked and styled phone-first (mocked phone bezel on desktop) so the desktop build looks and behaves like the phone build.
 
-**Inference:** EfficientNet-B0 trained in the existing notebook, converted from `Models/drowsiness_efficientnet_b0.h5` to a `.tflite` model via `scripts/convert_model.py`, loaded through `tflite_flutter`. Runs entirely on-device — no network calls during a drive.
+**Inference:** **ResNet50V2** transfer-learned on the 6-class drowsiness task, converted from `Models/drowsiness_resnet50v2.h5` to a `.tflite` model via `scripts/convert_model.py`, loaded through `tflite_flutter`. Runs entirely on-device — no network calls during a drive. ResNet50V2 has no internal normalization layer, so the detector applies `preprocess_input` manually (BGR uint8 → `x/127.5 - 1.0`) before each forward pass.
 
 **Detection (face / eyes):** `opencv_dart` runs **YuNet** (`face_detection_yunet_2023mar.onnx`, ~230 KB) for both face localization and eye landmarking. YuNet replaces the two Haar cascades the pipeline used to rely on. Two failure modes pushed the switch:
 
