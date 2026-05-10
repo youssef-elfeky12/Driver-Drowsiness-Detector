@@ -39,17 +39,36 @@ class Detector {
 
   bool get isReady => _interp != null && _faceDetector != null;
 
+  /// Asset-bundle init. Only safe on the root isolate (rootBundle requires
+  /// the platform-channel binary messenger). Extracts the two model files
+  /// to temp and forwards to [initFromPaths].
   Future<void> init({void Function(String)? onProgress}) async {
-    onProgress?.call('Loading model…');
-    _interp = await Interpreter.fromAsset(
-      'assets/models/drowsiness_resnet50v2.tflite',
-    );
-    _interp!.allocateTensors();
-
-    onProgress?.call('Loading face detector…');
+    onProgress?.call('Extracting models…');
+    final tflitePath = await _writeAssetToTemp(
+        'assets/models/drowsiness_resnet50v2.tflite',
+        'drowsiness_resnet50v2.tflite');
     final yunetPath = await _writeAssetToTemp(
         'assets/models/face_detection_yunet_2023mar.onnx',
         'face_detection_yunet_2023mar.onnx');
+    initFromPaths(
+      tflitePath: tflitePath,
+      yunetPath: yunetPath,
+      onProgress: onProgress,
+    );
+  }
+
+  /// Isolate-safe init. Both files must already exist on disk (the caller
+  /// is responsible for extracting them from assets on the root isolate).
+  void initFromPaths({
+    required String tflitePath,
+    required String yunetPath,
+    void Function(String)? onProgress,
+  }) {
+    onProgress?.call('Loading model…');
+    _interp = Interpreter.fromFile(File(tflitePath));
+    _interp!.allocateTensors();
+
+    onProgress?.call('Loading face detector…');
     // Input size is reset per-frame via setInputSize; the (320,320) here is
     // just a starting point.
     _faceDetector = cv.FaceDetectorYN.fromFile(
@@ -60,7 +79,6 @@ class Detector {
       nmsThreshold: 0.3,
       topK: 50,
     );
-
     onProgress?.call('Ready');
   }
 
@@ -85,7 +103,7 @@ class Detector {
         tsMs: DateTime.now().millisecondsSinceEpoch,
       );
     }
-    final mat = _matFromCameraImage(image);
+    final mat = matFromCameraImage(image);
     if (mat == null) {
       return DetectionResult(
         faces: const [],
@@ -190,7 +208,11 @@ class Detector {
     }
   }
 
-  cv.Mat? _matFromCameraImage(CameraImage img) {
+  /// Convert a [CameraImage] to a BGR cv.Mat. Returns null on unsupported
+  /// formats. Caller owns the Mat. Exposed so the inference-worker layer
+  /// can do the conversion on the root isolate (where the camera frame
+  /// lives) before shipping raw bytes to a worker isolate.
+  static cv.Mat? matFromCameraImage(CameraImage img) {
     try {
       // BGRA8888 (Windows / iOS when configured): single plane, 4 channels.
       if (img.format.group == ImageFormatGroup.bgra8888) {

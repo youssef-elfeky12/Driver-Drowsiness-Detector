@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:io';
+import 'dart:typed_data';
 import 'dart:ui' as ui;
 
 import 'package:camera/camera.dart';
@@ -14,6 +15,7 @@ import '../services/alert_engine.dart';
 import '../services/audio_engine.dart';
 import '../services/desktop_camera.dart';
 import '../services/detector.dart';
+import '../services/inference_worker.dart';
 import '../services/location_service.dart';
 import '../services/settings.dart';
 import '../services/storage.dart';
@@ -41,7 +43,7 @@ class _DrivePageState extends State<DrivePage> {
   Timer? _desktopFrameTimer;
   ui.Image? _desktopFrame;
 
-  final Detector _detector = Detector();
+  final InferenceWorker _worker = InferenceWorker();
   final AudioEngine _audio = AudioEngine();
   AlertEngine? _engine;
 
@@ -81,7 +83,7 @@ class _DrivePageState extends State<DrivePage> {
     await _audio.init();
 
     setState(() => _loadingMsg = 'Loading model…');
-    await _detector.init(onProgress: (m) => setState(() => _loadingMsg = m));
+    await _worker.init(onProgress: (m) => setState(() => _loadingMsg = m));
 
     setState(() => _loadingMsg = 'Camera…');
     if (_useDesktopCamera) {
@@ -126,7 +128,7 @@ class _DrivePageState extends State<DrivePage> {
     _camera?.dispose();
     _engine?.stop();
     _audio.dispose();
-    _detector.dispose();
+    _worker.dispose();
     WakelockPlus.disable();
     super.dispose();
   }
@@ -229,13 +231,32 @@ class _DrivePageState extends State<DrivePage> {
 
   Future<void> _onFrame(CameraImage image) async {
     if (_busy || _paused || _engine == null) return;
+    // Convert on main isolate (CameraImage isn't sendable), then ship raw
+    // BGR bytes to the worker.
+    final mat = Detector.matFromCameraImage(image);
+    if (mat == null) return;
+    final Uint8List bytes;
+    final int w, h;
+    try {
+      bytes = Uint8List.fromList(mat.data);
+      w = mat.cols;
+      h = mat.rows;
+    } finally {
+      mat.dispose();
+    }
     _busy = true;
     try {
-      final result = _detector.detect(image, _settings.confidenceThreshold);
+      final result = await _worker.infer(
+        bgrBytes: bytes,
+        width: w,
+        height: h,
+        threshold: _settings.confidenceThreshold,
+      );
+      if (result == null || !mounted || _engine == null) return;
       _lastResult = result;
       await _engine!.ingest(result);
       if (mounted) setState(() {});
-    } catch (e) {
+    } catch (_) {
       // swallow per-frame errors
     } finally {
       _busy = false;
@@ -265,6 +286,27 @@ class _DrivePageState extends State<DrivePage> {
         const Duration(seconds: 30), (_) => doFetch());
   }
 
+  Future<void> _runWorkerInfer(Uint8List bytes, int w, int h) async {
+    try {
+      final result = await _worker.infer(
+        bgrBytes: bytes,
+        width: w,
+        height: h,
+        threshold: _settings.confidenceThreshold,
+      );
+      if (!mounted || _engine == null) return;
+      if (result == null) return;
+      _lastResult = result;
+      await _engine!.ingest(result);
+      _lastInferenceMs = DateTime.now().millisecondsSinceEpoch;
+      if (mounted) setState(() {});
+    } catch (_) {
+      // swallow per-frame errors
+    } finally {
+      _busy = false;
+    }
+  }
+
   Future<void> _onDesktopTick() async {
     if (_paused) return;
     cv.Mat? frame;
@@ -279,21 +321,24 @@ class _DrivePageState extends State<DrivePage> {
       old?.dispose();
 
       // 2) Run detection only when the inference interval has elapsed AND a
-      //    previous inference isn't still running (`_busy`).
+      //    previous inference isn't still running (`_busy`). The heavy work
+      //    runs on a worker isolate, so the preview keeps painting smoothly
+      //    while inference is in flight — this throttle is just to avoid
+      //    queuing more work than we can chew.
       final now = DateTime.now().millisecondsSinceEpoch;
       if (!_busy &&
           _engine != null &&
           now - _lastInferenceMs >= _inferenceIntervalMs) {
+        // Snapshot BGR bytes before dispatching — the Mat itself can't
+        // cross the isolate boundary and will be disposed in `finally`.
+        final bytes = Uint8List.fromList(frame.data);
+        final fw = frame.cols;
+        final fh = frame.rows;
         _busy = true;
-        try {
-          final result =
-              _detector.detectMat(frame, _settings.confidenceThreshold);
-          _lastResult = result;
-          await _engine!.ingest(result);
-          _lastInferenceMs = DateTime.now().millisecondsSinceEpoch;
-        } finally {
-          _busy = false;
-        }
+        // Fire-and-forget; the await happens inside this microtask but the
+        // ticker function will return as soon as the worker reply lands.
+        // ignore: unawaited_futures
+        _runWorkerInfer(bytes, fw, fh);
       }
 
       if (mounted) setState(() {});
