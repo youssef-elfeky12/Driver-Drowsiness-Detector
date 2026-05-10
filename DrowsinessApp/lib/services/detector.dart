@@ -10,7 +10,16 @@ import 'package:tflite_flutter/tflite_flutter.dart';
 
 import '../models/types.dart';
 
-/// Loads the TFLite model + Haar cascades, and runs detection on a frame.
+/// Loads the TFLite model + YuNet face detector, and runs detection on a
+/// frame.
+///
+/// Both face *and* eye localization come from YuNet:
+/// - face bbox (cols 0..3 of the [N,15] output)
+/// - 5 landmarks (cols 4..13) — we use the right/left eye points to derive
+///   eye crops directly. This replaces `haarcascade_eye.xml`, which lost
+///   the eye whenever it closed (the cascade was trained on open eyes).
+///   YuNet infers landmarks from face geometry, so closed eyes still yield
+///   valid eye points.
 ///
 /// Class index map (from notebook):
 /// 0=yawn, 1=no_yawn, 2=Closed, 3=Open, 4=front, 5=down
@@ -20,12 +29,15 @@ class Detector {
   static const _headIndices = [4, 5]; // front vs down (binary)
   static const _eyeIndices = [2, 3];
 
-  Interpreter? _interp;
-  cv.CascadeClassifier? _faceCascade;
-  cv.CascadeClassifier? _eyeCascade;
+  // Eye crop side length as a fraction of face width. ~0.30 covers the eye
+  // plus enough surrounding skin for the classifier to see lid context.
+  static const double _eyeSideFrac = 0.30;
 
-  bool get isReady =>
-      _interp != null && _faceCascade != null && _eyeCascade != null;
+  Interpreter? _interp;
+  cv.FaceDetectorYN? _faceDetector;
+  (int, int)? _yunetInputSize;
+
+  bool get isReady => _interp != null && _faceDetector != null;
 
   Future<void> init({void Function(String)? onProgress}) async {
     onProgress?.call('Loading model…');
@@ -34,14 +46,20 @@ class Detector {
     );
     _interp!.allocateTensors();
 
-    onProgress?.call('Loading cascades…');
-    final faceXml = await _writeAssetToTemp(
-        'assets/haarcascades/haarcascade_frontalface_default.xml',
-        'face.xml');
-    final eyeXml = await _writeAssetToTemp(
-        'assets/haarcascades/haarcascade_eye.xml', 'eye.xml');
-    _faceCascade = cv.CascadeClassifier.fromFile(faceXml);
-    _eyeCascade = cv.CascadeClassifier.fromFile(eyeXml);
+    onProgress?.call('Loading face detector…');
+    final yunetPath = await _writeAssetToTemp(
+        'assets/models/face_detection_yunet_2023mar.onnx',
+        'face_detection_yunet_2023mar.onnx');
+    // Input size is reset per-frame via setInputSize; the (320,320) here is
+    // just a starting point.
+    _faceDetector = cv.FaceDetectorYN.fromFile(
+      yunetPath,
+      '',
+      (320, 320),
+      scoreThreshold: 0.6,
+      nmsThreshold: 0.3,
+      topK: 50,
+    );
 
     onProgress?.call('Ready');
   }
@@ -95,13 +113,11 @@ class Detector {
       );
     }
     try {
-      final gray = cv.cvtColor(mat, cv.COLOR_BGR2GRAY);
-      final faces =
-          _faceCascade!.detectMultiScale(gray, scaleFactor: 1.3, minNeighbors: 5);
-      gray.dispose();
+      final faces = _detectFacesYuNet(mat);
 
       final out = <FacePrediction>[];
-      for (final r in faces) {
+      for (final f in faces) {
+        final r = f.rect;
         final fb = FaceBox(r.x, r.y, r.width, r.height);
         final probs = _classify(mat, fb);
 
@@ -130,22 +146,12 @@ class Detector {
           faceConf = (yawnConf + headConf) / 2;
         }
 
-        // Eyes inside face ROI (upper 60%)
-        final eyeRoi = mat.region(cv.Rect(r.x, r.y, r.width, r.height));
-        final grayE = cv.cvtColor(eyeRoi, cv.COLOR_BGR2GRAY);
-        final eyes =
-            _eyeCascade!.detectMultiScale(grayE, scaleFactor: 1.1, minNeighbors: 5);
-        grayE.dispose();
-        eyeRoi.dispose();
-
+        // Eye crops come straight from YuNet landmarks — no eye detector
+        // pass, so closed eyes still produce valid crops.
         final eyePreds = <EyePrediction>[];
-        // Sort eyes by area, take 2 largest, filter to upper 60% of face
-        final filtered = eyes
-            .where((e) => e.y + e.height / 2 < r.height * 0.6)
-            .toList()
-          ..sort((a, b) => (b.width * b.height) - (a.width * a.height));
-        for (final e in filtered.take(2)) {
-          final eb = FaceBox(r.x + e.x, r.y + e.y, e.width, e.height);
+        for (final pt in [f.rightEye, f.leftEye]) {
+          final eb = _eyeBoxFromLandmark(pt, r, mat.cols, mat.rows);
+          if (eb == null) continue;
           final ep = _classify(mat, eb);
           final ev = _renormalized(ep, _eyeIndices);
           final ei = ev[0] > ev[1] ? 0 : 1;
@@ -256,9 +262,99 @@ class Detector {
     return subset.map((v) => v / sum).toList();
   }
 
+  /// Run YuNet on a BGR Mat and return faces (bbox + eye landmarks) in image
+  /// coordinates.
+  ///
+  /// YuNet's `detect` returns a [N,15] float Mat: 0..3 = x,y,w,h;
+  /// 4..5 = right eye, 6..7 = left eye, 8..9 = nose, 10..13 = mouth corners,
+  /// 14 = score. We keep bbox + eye points; nose/mouth are unused.
+  List<_YuNetFace> _detectFacesYuNet(cv.Mat mat) {
+    final size = (mat.cols, mat.rows);
+    if (_yunetInputSize == null ||
+        _yunetInputSize!.$1 != size.$1 ||
+        _yunetInputSize!.$2 != size.$2) {
+      _faceDetector!.setInputSize(size);
+      _yunetInputSize = size;
+    }
+    final result = _faceDetector!.detect(mat);
+    try {
+      final faces = <_YuNetFace>[];
+      for (var i = 0; i < result.rows; i++) {
+        final x = result.atNum(i, 0).toInt();
+        final y = result.atNum(i, 1).toInt();
+        final w = result.atNum(i, 2).toInt();
+        final h = result.atNum(i, 3).toInt();
+        // Clamp to frame bounds — YuNet can return slightly negative
+        // coords or boxes that spill past the edge on extreme poses.
+        final x0 = x.clamp(0, mat.cols - 1);
+        final y0 = y.clamp(0, mat.rows - 1);
+        final x1 = (x + w).clamp(0, mat.cols);
+        final y1 = (y + h).clamp(0, mat.rows);
+        final cw = x1 - x0;
+        final ch = y1 - y0;
+        if (cw <= 0 || ch <= 0) continue;
+        faces.add(_YuNetFace(
+          rect: cv.Rect(x0, y0, cw, ch),
+          rightEye: (
+            result.atNum(i, 4).toDouble(),
+            result.atNum(i, 5).toDouble(),
+          ),
+          leftEye: (
+            result.atNum(i, 6).toDouble(),
+            result.atNum(i, 7).toDouble(),
+          ),
+        ));
+      }
+      return faces;
+    } finally {
+      result.dispose();
+    }
+  }
+
+  /// Build a square eye crop around a YuNet eye landmark.
+  ///
+  /// Side length is a fraction of face width so the crop scales with the
+  /// subject's distance from the camera. We clamp the box to the frame *and*
+  /// the face rect — if a landmark drifts outside the face on an extreme
+  /// pose, this keeps the crop sensible instead of running the classifier
+  /// on background.
+  FaceBox? _eyeBoxFromLandmark(
+    (double, double) pt,
+    cv.Rect face,
+    int frameW,
+    int frameH,
+  ) {
+    final side = (face.width * _eyeSideFrac).round();
+    if (side <= 1) return null;
+    final half = side ~/ 2;
+    final cx = pt.$1.round();
+    final cy = pt.$2.round();
+    final faceX1 = face.x + face.width;
+    final faceY1 = face.y + face.height;
+    int clampI(int v, int lo, int hi) => v < lo ? lo : (v > hi ? hi : v);
+    final x0 = clampI(clampI(cx - half, face.x, faceX1 - 1), 0, frameW - 1);
+    final y0 = clampI(clampI(cy - half, face.y, faceY1 - 1), 0, frameH - 1);
+    final x1 = clampI(clampI(cx + half, face.x, faceX1), 0, frameW);
+    final y1 = clampI(clampI(cy + half, face.y, faceY1), 0, frameH);
+    final w = x1 - x0;
+    final h = y1 - y0;
+    if (w <= 1 || h <= 1) return null;
+    return FaceBox(x0, y0, w, h);
+  }
+
   void dispose() {
     _interp?.close();
-    _faceCascade?.dispose();
-    _eyeCascade?.dispose();
+    _faceDetector?.dispose();
   }
+}
+
+class _YuNetFace {
+  final cv.Rect rect;
+  final (double, double) rightEye;
+  final (double, double) leftEye;
+  _YuNetFace({
+    required this.rect,
+    required this.rightEye,
+    required this.leftEye,
+  });
 }
