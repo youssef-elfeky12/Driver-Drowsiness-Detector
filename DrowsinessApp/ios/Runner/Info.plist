@@ -49,6 +49,24 @@
 	</dict>
 	<key>UIApplicationSupportsIndirectInputEvents</key>
 	<true/>
+	<key>NSCameraUsageDescription</key>
+	<string>Camera access is required to monitor the driver's eyes and detect drowsiness.</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>Microphone permission is requested by the camera framework. Audio is not recorded.</string>
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>Location is used to share your position with emergency services if a critical drowsiness event is detected.</string>
+	<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
+	<string>Location is used to share your position with emergency services if a critical drowsiness event is detected.</string>
+	<key>UIBackgroundModes</key>
+	<array>
+		<string>audio</string>
+		<string>location</string>
+	</array>
+	<key>LSApplicationQueriesSchemes</key>
+	<array>
+		<string>tel</string>
+		<string>telprompt</string>
+	</array>
 	<key>UILaunchStoryboardName</key>
 	<string>LaunchScreen</string>
 	<key>UIMainStoryboardFile</key>
