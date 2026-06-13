@@ -7,7 +7,7 @@ Source model : Models/drowsiness_eyeyawnnod.h5
 The browser app (onnxruntime-web) feeds an already-normalized [1,145,145,3]
 float32 tensor, so we export the bare model graph (no preprocessing baked in).
 
-Output: DrowsinessApp web app at webapp/public/models/classifier.onnx
+Output: DrowsinessApp/webapp/public/models/classifier.onnx
 Also copies the YuNet ONNX detector into the same folder.
 
 Run:  python scripts/web_convert.py
@@ -25,7 +25,7 @@ SRC_H5 = os.path.join(BASE, "Models", "drowsiness_eyeyawnnod.h5")
 YUNET_SRC = os.path.join(
     BASE, "DrowsinessApp", "assets", "models", "face_detection_yunet_2023mar.onnx"
 )
-OUT_DIR = os.path.join(BASE, "webapp", "public", "models")
+OUT_DIR = os.path.join(BASE, "DrowsinessApp", "webapp", "public", "models")
 OUT_ONNX = os.path.join(OUT_DIR, "classifier.onnx")
 OUT_YUNET = os.path.join(OUT_DIR, "face_detection_yunet_2023mar.onnx")
 
